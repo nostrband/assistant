@@ -1,0 +1,170 @@
+Here’s a **compressed end-to-end** setup using the AI SDK (App Router) that:
+
+* creates a chat and redirects to `/chat/:id`
+* loads/persists **UIMessage[]** on the server
+* sends **only the new user message** to the server, where the server rebuilds full history before calling the LLM
+
+---
+
+### 1) Minimal chat store (replace with your DB)
+
+```ts
+// util/chat-store.ts (server-only)
+import 'server-only'
+import { generateId, type UIMessage } from 'ai'
+
+// TODO: swap for your DB; this is just a placeholder
+const mem = new Map<string, UIMessage[]>()
+
+export async function createChat() {
+  const id = generateId()
+  mem.set(id, [])
+  return id
+}
+
+export async function loadChat(id: string): Promise<UIMessage[]> {
+  return mem.get(id) ?? []
+}
+
+export async function saveChat(opts: { chatId: string; messages: UIMessage[] }) {
+  mem.set(opts.chatId, opts.messages)
+}
+```
+
+**Why UIMessage[]?** The SDK recommends storing frontend/UI messages and converts them server-side for the model. ([AI SDK][1])
+
+---
+
+### 2) Create a new chat and redirect
+
+```ts
+// app/chat/page.tsx
+import { redirect } from 'next/navigation'
+import { createChat } from '@/util/chat-store'
+
+export default async function Page() {
+  const id = await createChat()
+  redirect(`/chat/${id}`)
+}
+```
+
+(“Start a new chat → redirect with id”.) ([AI SDK][1])
+
+---
+
+### 3) Load messages for an existing chat (SSR) and render UI
+
+```tsx
+// app/chat/[id]/page.tsx
+import { loadChat } from '@/util/chat-store'
+import Chat from './ui-chat'
+
+export default async function Page({ params }: { params: { id: string } }) {
+  const messages = await loadChat(params.id)
+  return <Chat id={params.id} initialMessages={messages} />
+}
+```
+
+(“Load existing chat messages from storage for the page”.) ([AI SDK][1])
+
+---
+
+### 4) Client chat component – only send the **last** message
+
+```tsx
+// app/chat/[id]/ui-chat.tsx
+'use client'
+
+import { useState } from 'react'
+import { useChat } from '@ai-sdk/react'
+import { DefaultChatTransport } from 'ai'
+import type { UIMessage } from 'ai'
+
+export default function Chat({
+  id,
+  initialMessages,
+}: { id: string; initialMessages: UIMessage[] }) {
+  const [input, setInput] = useState('')
+  const { messages, sendMessage, status } = useChat({
+    id,
+    messages: initialMessages,
+    transport: new DefaultChatTransport({
+      api: '/api/chat',
+      // send ONLY the newest message; server will reload history:
+      prepareSendMessagesRequest({ messages, id }) {
+        return { body: { message: messages[messages.length - 1], id } }
+      },
+    }),
+  })
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        if (input.trim()) { sendMessage({ text: input }); setInput('') }
+      }}
+    >
+      <div>{messages.map(m => <div key={m.id}>{m.role}: {m.parts.map(p=>p.type==='text'?p.text:'').join('')}</div>)}</div>
+      <input value={input} onChange={e=>setInput(e.target.value)} disabled={status!=='ready'} />
+      <button disabled={status!=='ready'}>Send</button>
+    </form>
+  )
+}
+```
+
+(The SDK shows `prepareSendMessagesRequest` to send only the last user message.) ([AI SDK][1])
+
+---
+
+### 5) Server route – rebuild full history, stream, and persist
+
+```ts
+// app/api/chat/route.ts
+import { NextRequest } from 'next/server'
+import {
+  convertToModelMessages,
+  streamText,
+  validateUIMessages,
+  type UIMessage,
+} from 'ai'
+import { openai } from '@ai-sdk/openai'
+import { loadChat, saveChat } from '@/util/chat-store'
+
+export async function POST(req: NextRequest) {
+  const { message, id }: { message: UIMessage; id: string } = await req.json()
+
+  // Load previous messages and append the new one:
+  const previous = await loadChat(id)
+  const messages = [...previous, message]
+
+  // (Optional) validate if you use tools/metadata/data parts:
+  const validated = await validateUIMessages({ messages })
+
+  const result = streamText({
+    model: openai('gpt-4o-mini'),
+    messages: convertToModelMessages(validated),
+  })
+
+  // Stream back to the client and persist when finished:
+  return result.toUIMessageStreamResponse({
+    originalMessages: validated,
+    onFinish: ({ messages }) => saveChat({ chatId: id, messages }),
+  })
+}
+```
+
+(Load old messages, add the new one, stream with `toUIMessageStreamResponse`, and persist in `onFinish`.) ([AI SDK][1])
+
+---
+
+That’s the whole flow:
+
+1. **Create** chat → redirect. ([AI SDK][1])
+2. **Load** `UIMessage[]` on the server and pass as `initialMessages`. ([AI SDK][1])
+3. Client **sends only the latest** user message (chat id included). ([AI SDK][1])
+4. Server **rebuilds full history**, validates (optional), **streams** LLM reply, and **persists** the final messages. ([AI SDK][1])
+
+If you want, I can swap the in-memory store for Postgres/Upstash with concise SQL/Redis snippets.
+
+[1]: https://ai-sdk.dev/docs/ai-sdk-ui/chatbot-message-persistence "AI SDK UI: Chatbot Message Persistence"
+
