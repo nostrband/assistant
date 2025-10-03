@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  ai-assistant:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - ai-assistant-data:/app/data
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-}
+      - USER_PASSWORD=${USER_PASSWORD:-}
+      - DATA_PATH=/app/data
+      - NODE_ENV=production
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  ai-assistant-data:
+    driver: local
