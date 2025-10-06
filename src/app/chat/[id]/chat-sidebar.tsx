@@ -55,24 +55,24 @@ export default function ChatSidebar({ chats, currentChatId }: ChatSidebarProps) 
           </div>
         ) : (
           <div className="space-y-1 p-2">
-            {chats.map((chat) => (
+            {chats.map((chatItem) => (
               <Link
-                key={chat.id}
-                href={`/chat/${chat.id}`}
+                key={chatItem.id}
+                href={`/chat/${chatItem.id}`}
                 className={`block p-3 rounded-lg hover:bg-gray-50 transition-colors ${
-                  currentChatId === chat.id ? 'bg-blue-50 border-l-4 border-blue-500' : ''
+                  currentChatId === chatItem.id ? 'bg-blue-50 border-l-4 border-blue-500' : ''
                 }`}
               >
                 <div className="flex justify-between items-start">
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-gray-800 truncate">
-                      {truncateMessage(chat.first_message)}
+                      {truncateMessage(chatItem.first_message)}
                     </div>
                     <div className="text-xs text-gray-500 mt-1">
-                      {formatTime(chat.first_message_time)}
+                      {formatTime(chatItem.first_message_time)}
                     </div>
                   </div>
-                  {currentChatId === chat.id && (
+                  {currentChatId === chatItem.id && (
                     <div className="w-2 h-2 bg-blue-500 rounded-full ml-2 flex-shrink-0"></div>
                   )}
                 </div>

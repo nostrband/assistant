@@ -45,23 +45,23 @@ export default async function HomePage() {
               <h2 className="text-lg font-semibold text-gray-800">Recent Conversations</h2>
             </div>
             <div className="divide-y divide-gray-200">
-              {chats.map((chat) => (
+              {chats.map((chatItem) => (
                 <Link
-                  key={chat.id}
-                  href={`/chat/${chat.id}`}
+                  key={chatItem.id}
+                  href={`/chat/${chatItem.id}`}
                   className="block px-6 py-4 hover:bg-gray-50 transition-colors"
                 >
                   <div className="flex justify-between items-start">
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-gray-800">
-                        {truncateMessage(chat.first_message)}
+                        {truncateMessage(chatItem.first_message)}
                       </div>
                       <div className="text-xs text-gray-500 mt-1">
-                        {formatTime(chat.first_message_time)}
+                        {formatTime(chatItem.first_message_time)}
                       </div>
                     </div>
                     <div className="text-xs text-gray-400 ml-4">
-                      Updated {formatTime(chat.updated_at)}
+                      Updated {formatTime(chatItem.updated_at)}
                     </div>
                   </div>
                 </Link>

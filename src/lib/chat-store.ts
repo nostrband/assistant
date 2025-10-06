@@ -1,11 +1,10 @@
 import "server-only";
 import { generateId, type UIMessage } from "ai";
 import getDatabase from "./database";
-import { mastra } from "@/mastra";
 import { convertMessages } from "@mastra/core/agent";
 import { USER_ID } from "./const";
+import { assistantMemory } from "@/mastra/memory";
 
-const assistantAgent = mastra.getAgent("assistantAgent");
 const userId = USER_ID;
 
 // Create a new chat ID (but don't save to DB yet - only when first message is sent)
@@ -17,8 +16,7 @@ export async function createChat(): Promise<string> {
 
 // Load all messages for a chat using Mastra memory
 export async function loadChat(id: string): Promise<UIMessage[]> {
-  const memory = await assistantAgent.getMemory();
-  if (!memory) throw new Error("No memory on the agent");
+  const memory = assistantMemory;
 
   try {
     const result = await memory.query({

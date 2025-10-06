@@ -1,8 +1,7 @@
 import { Agent } from "@mastra/core/agent";
-import { Memory } from "@mastra/memory";
-import { LibSQLStore, LibSQLVector } from "@mastra/libsql";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { fastembed } from "@mastra/fastembed";
+import { sendMessageTool } from "../tools/send-message";
+import { assistantMemory } from "../memory";
 
 // Configure OpenRouter provider
 const openrouter = createOpenRouter({
@@ -10,50 +9,15 @@ const openrouter = createOpenRouter({
   baseURL: process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1",
 });
 
-// Configure memory with LibSQL storage
-const memory = new Memory({
-  embedder: fastembed,
-  storage: new LibSQLStore({
-    url: process.env.DATA_PATH 
-      ? `file:${process.env.DATA_PATH}/memory.db`
-      : "file:memory.db", // Store in DATA_PATH if set, otherwise project root
-  }),
-  // this is the default vector db if omitted
-  vector: new LibSQLVector({
-    connectionUrl: process.env.DATA_PATH
-      ? `file:${process.env.DATA_PATH}/vector.db`
-      : "file:vector.db", // Store in DATA_PATH if set, otherwise project root
-  }),
-  options: {
-    semanticRecall: {
-      topK: 3, // Retrieve 3 most similar messages
-      messageRange: 2, // Include 2 messages before and after each match
-      scope: "resource", // Search across all threads for this user
-    },
-    workingMemory: {
-      enabled: true,
-      scope: "resource", // Memory persists across all user threads
-      template: `# User Profile
-- **Name**:
-- **Location**:
-- **Preferred Tone**:
-- **Schedule**:
-- **Interests**:
-- **Preferences**:
-- **Long-term Goals**:
-- **Projects**:
-- **Challenges**:
-- **Reminders**:
-`,
-    },
-  },
-});
 
 // Create the AI assistant agent with memory
 export const assistantAgent = new Agent({
   name: "Personal Assistant",
   model: openrouter("openai/gpt-oss-120b"),
-  memory,
+  memory: assistantMemory,
+  tools: {
+    sendMessageTool,
+  },
   instructions: async () => {
     return `
 # System: Personal Assistant (MVP – Memory-only)

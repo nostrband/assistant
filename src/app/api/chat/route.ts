@@ -5,6 +5,7 @@ import { convertMessages, UIMessageWithMetadata } from "@mastra/core/agent";
 import { saveChat } from "@/lib/chat-store";
 import { USER_ID } from "@/lib/const";
 import { CoreMessage } from "@mastra/core";
+import { assistantMemory } from "@/mastra/memory";
 
 const assistantAgent = mastra.getAgent("assistantAgent");
 const userId = USER_ID; // FIXME from auth info
@@ -16,11 +17,7 @@ export async function GET(req: NextRequest) {
     return new Response("Specify chat id", { status: 400 });
   }
 
-  const memory = await assistantAgent.getMemory();
-  if (!memory) {
-    console.error("Chat API error:", "No memory");
-    return new Response("Internal Server Error", { status: 500 });
-  }
+  const memory = assistantMemory;
   try {
     const result = await memory.query({
       threadId: id,
@@ -39,8 +36,7 @@ export async function POST(req: NextRequest) {
     const { message, id }: { message: UIMessage; id: string } =
       await req.json();
 
-    const memory = await assistantAgent.getMemory();
-    if (!memory) throw new Error("No memory");
+    const memory = assistantMemory;
 
     let result:
       | {
