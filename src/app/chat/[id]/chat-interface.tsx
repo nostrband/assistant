@@ -1,11 +1,11 @@
-'use client';
+"use client";
 
 import {
   Conversation,
   ConversationContent,
   ConversationScrollButton,
-} from '@/components/ai-elements/conversation';
-import { Message, MessageContent } from '@/components/ai-elements/message';
+} from "@/components/ai-elements/conversation";
+import { Message, MessageContent } from "@/components/ai-elements/message";
 import {
   PromptInput,
   PromptInputActionAddAttachments,
@@ -15,53 +15,65 @@ import {
   PromptInputAttachment,
   PromptInputAttachments,
   PromptInputBody,
-  PromptInputButton,
+  // PromptInputButton,
   type PromptInputMessage,
   PromptInputSubmit,
   PromptInputTextarea,
   PromptInputToolbar,
   PromptInputTools,
-} from '@/components/ai-elements/prompt-input';
-import {
-  Actions,
-  Action,
-} from '@/components/ai-elements/actions';
-import { useState, Fragment } from 'react';
-import { useChat } from '@ai-sdk/react';
-import { DefaultChatTransport } from 'ai';
-import type { UIMessage } from 'ai';
-import { Response } from '@/components/ai-elements/response';
-import { RefreshCcwIcon, CopyIcon } from 'lucide-react';
+} from "@/components/ai-elements/prompt-input";
+import { Actions, Action } from "@/components/ai-elements/actions";
+import { useState } from "react";
+import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport } from "ai";
+import type { UIMessage, ToolUIPart } from "ai";
+import { Response } from "@/components/ai-elements/response";
+import { RefreshCcwIcon, CopyIcon } from "lucide-react";
 import {
   Source,
   Sources,
   SourcesContent,
   SourcesTrigger,
-} from '@/components/ai-elements/sources';
+} from "@/components/ai-elements/sources";
 import {
   Reasoning,
   ReasoningContent,
   ReasoningTrigger,
-} from '@/components/ai-elements/reasoning';
-import { Loader } from '@/components/ai-elements/loader';
-
+} from "@/components/ai-elements/reasoning";
+import {
+  Tool,
+  ToolContent,
+  ToolHeader,
+  ToolInput,
+  ToolOutput,
+} from "@/components/ai-elements/tool";
+import { Loader } from "@/components/ai-elements/loader";
 
 interface ChatInterfaceProps {
   id: string;
   initialMessages: UIMessage[];
 }
 
-export default function ChatInterface({ id, initialMessages }: ChatInterfaceProps) {
-  const [input, setInput] = useState('');
+export default function ChatInterface({
+  id,
+  initialMessages,
+}: ChatInterfaceProps) {
+  const [input, setInput] = useState("");
 
-  const { messages, status, sendMessage } = useChat({
+  const { messages, status, sendMessage, regenerate } = useChat({
     id,
     messages: initialMessages,
     transport: new DefaultChatTransport({
-      api: '/api/chat',
+      api: "/api/chat",
       // Send ONLY the newest message; server will reload history
-      prepareSendMessagesRequest({ messages, id }) {
-        return { body: { message: messages[messages.length - 1], id } };
+      prepareSendMessagesRequest({ messages, id, trigger }) {
+        return {
+          body: {
+            message: messages[messages.length - 1],
+            id,
+            regenerate: trigger === "regenerate-message",
+          },
+        };
       },
     }),
   });
@@ -74,21 +86,11 @@ export default function ChatInterface({ id, initialMessages }: ChatInterfaceProp
       return;
     }
 
-    sendMessage(
-      {
-        text: message.text || 'Sent with attachments',
-        files: message.files
-      }
-    );
-    setInput('');
-  };
-
-  const regenerate = () => {
-    // For now, we'll implement a simple regeneration by resending the last user message
-    const lastUserMessage = messages.filter(m => m.role === 'user').pop();
-    if (lastUserMessage) {
-      sendMessage(lastUserMessage);
-    }
+    sendMessage({
+      text: message.text || "Sent with attachments",
+      files: message.files,
+    });
+    setInput("");
   };
 
   return (
@@ -98,81 +100,129 @@ export default function ChatInterface({ id, initialMessages }: ChatInterfaceProp
           <ConversationContent>
             {messages.map((message) => (
               <div key={message.id}>
-                {message.role === 'assistant' && message.parts.filter((part) => part.type === 'source-url').length > 0 && (
-                  <Sources>
-                    <SourcesTrigger
-                      count={
-                        message.parts.filter(
-                          (part) => part.type === 'source-url',
-                        ).length
-                      }
-                    />
-                    {message.parts.filter((part) => part.type === 'source-url').map((part, sourceIndex) => (
-                      <SourcesContent key={`${message.id}-${sourceIndex}`}>
-                        <Source
-                          key={`${message.id}-${sourceIndex}`}
-                          href={part.url}
-                          title={part.url}
-                        />
-                      </SourcesContent>
-                    ))}
-                  </Sources>
-                )}
-                {message.parts.map((part, partIndex) => {
-                  switch (part.type) {
-                    case 'text':
-                      return (
-                        <Fragment key={`${message.id}-${partIndex}`}>
-                          <Message from={message.role}>
-                            <MessageContent>
-                              <Response>
-                                {part.text}
-                              </Response>
-                            </MessageContent>
-                          </Message>
-                          {message.role === 'assistant' && partIndex === message.parts.length - 1 && message.id === messages.at(-1)?.id && (
-                            <Actions className="mt-2">
-                              <Action
-                                onClick={() => regenerate()}
-                                label="Retry"
-                              >
-                                <RefreshCcwIcon className="size-3" />
-                              </Action>
-                              <Action
-                                onClick={() =>
-                                  navigator.clipboard.writeText(part.text)
+                {message.role === "assistant" &&
+                  message.parts.filter((part) => part.type === "source-url")
+                    .length > 0 && (
+                    <Sources>
+                      <SourcesTrigger
+                        count={
+                          message.parts.filter(
+                            (part) => part.type === "source-url"
+                          ).length
+                        }
+                      />
+                      {message.parts
+                        .filter((part) => part.type === "source-url")
+                        .map((part, sourceIndex) => (
+                          <SourcesContent key={`${message.id}-${sourceIndex}`}>
+                            <Source
+                              key={`${message.id}-${sourceIndex}`}
+                              href={part.url}
+                              title={part.url}
+                            />
+                          </SourcesContent>
+                        ))}
+                    </Sources>
+                  )}
+                <Message from={message.role}>
+                  <MessageContent>
+                    {message.parts.map((part, partIndex) => {
+                      switch (part.type) {
+                        case "text":
+                          return (
+                            <Response key={`${message.id}-${partIndex}`}>
+                              {part.text}
+                            </Response>
+                          );
+                        case "reasoning":
+                          if (
+                            status === "streaming" &&
+                            message.id === messages.at(-1)?.id
+                          )
+                            return (
+                              <Reasoning
+                                key={`${message.id}-${partIndex}`}
+                                className="w-full"
+                                isStreaming={
+                                  status === "streaming" &&
+                                  partIndex === message.parts.length - 1 &&
+                                  message.id === messages.at(-1)?.id
                                 }
-                                label="Copy"
                               >
-                                <CopyIcon className="size-3" />
-                              </Action>
-                            </Actions>
-                          )}
-                        </Fragment>
-                      );
-                    case 'reasoning':
-                      return (
-                        <Reasoning
-                          key={`${message.id}-${partIndex}`}
-                          className="w-full"
-                          isStreaming={status === 'streaming' && partIndex === message.parts.length - 1 && message.id === messages.at(-1)?.id}
+                                <ReasoningTrigger />
+                                <ReasoningContent>{part.text}</ReasoningContent>
+                              </Reasoning>
+                            );
+                        default:
+                          // Handle tool parts
+                          if (part.type.startsWith("tool-")) {
+                            const toolPart = part as ToolUIPart;
+                            return (
+                              <Tool key={`${message.id}-${partIndex}`} defaultOpen={status === "streaming"}>
+                                <ToolHeader type={toolPart.type} state={toolPart.state} />
+                                <ToolContent>
+                                  <ToolInput input={toolPart.input} />
+                                  <ToolOutput
+                                    output={toolPart.output}
+                                    errorText={toolPart.errorText}
+                                  />
+                                </ToolContent>
+                              </Tool>
+                            );
+                          }
+                          return null;
+                      }
+                    })}
+                    {status !== "error" &&
+                      !message.parts.filter((m) => m.type === "text")
+                        .length && <Loader />}
+                    {status === "error" && message.id === messages.at(-1)?.id && (
+                      <div className="text-red-500 text-sm mt-2 px-4">
+                        Error, please retry later!
+                      </div>
+                    )}
+                  </MessageContent>
+                </Message>
+                {message.role === "assistant" &&
+                  (status === "ready" || status === "error") && (
+                    <Actions>
+                      {status === "error" && (
+                        <Action
+                          onClick={() => regenerate({ messageId: message.id })}
+                          label="Regenerate"
                         >
-                          <ReasoningTrigger />
-                          <ReasoningContent>{part.text}</ReasoningContent>
-                        </Reasoning>
-                      );
-                    default:
-                      return null;
-                  }
-                })}
+                          <RefreshCcwIcon className="size-3" />
+                        </Action>
+                      )}
+                      <Action
+                        onClick={() => {
+                          const textParts = message.parts.filter(
+                            (part) => part.type === "text"
+                          );
+                          const allText = textParts
+                            .map((part) => part.text)
+                            .join("\n");
+                          navigator.clipboard.writeText(allText);
+                        }}
+                        label="Copy"
+                      >
+                        <CopyIcon className="size-3" />
+                      </Action>
+                    </Actions>
+                  )}
               </div>
             ))}
-            {status === 'submitted' && <Loader />}
+            {status === "submitted" && <Loader />}
           </ConversationContent>
           <ConversationScrollButton />
         </Conversation>
 
-        <PromptInput onSubmit={handleSubmit} className="mt-4" globalDrop multiple>
+        <PromptInput
+          onSubmit={handleSubmit}
+          className="mt-4"
+          globalDrop
+          multiple
+        >
           <PromptInputBody>
             <PromptInputAttachments>
               {(attachment) => <PromptInputAttachment data={attachment} />}

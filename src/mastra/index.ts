@@ -4,5 +4,11 @@ import { ConsoleLogger } from "@mastra/core/logger";
 
 export const mastra = new Mastra({
   agents: { assistantAgent },
-  logger: new ConsoleLogger(),
+  logger: new ConsoleLogger({
+    level: "debug",
+  }),
+  // Enable AI tracing with default configuration
+  // observability: {
+  //   default: { enabled: true }
+  // },
 });

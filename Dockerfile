@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y \
     python3 \
     make \
     g++ \
+    sqlite3 \
     && curl -fsSL https://deb.nodesource.com/setup_23.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
@@ -43,6 +44,14 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+# Copy package.json and bundled job runner
+COPY --from=builder --chown=nextjs:nodejs /app/package.json ./
+COPY --from=builder --chown=nextjs:nodejs /app/package-lock.json ./
+COPY --from=builder --chown=nextjs:nodejs /app/dist ./dist
+
+# Install only production dependencies needed for runtime
+RUN npm ci --only=production && npm cache clean --force
+
 # Create data directory for database files
 RUN mkdir -p /app/data && chown nextjs:nodejs /app/data
 
@@ -54,4 +63,4 @@ ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 # Start the application
-CMD ["node", "server.js"]
+CMD ["npm", "run", "start"]

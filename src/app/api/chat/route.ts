@@ -6,6 +6,8 @@ import { saveChat } from "@/lib/chat-store";
 import { USER_ID } from "@/lib/const";
 import { CoreMessage } from "@mastra/core";
 import { assistantMemory } from "@/mastra/memory";
+import { RuntimeContext } from "@mastra/core/runtime-context";
+import { beginTransaction } from "@/lib/database";
 
 const assistantAgent = mastra.getAgent("assistantAgent");
 const userId = USER_ID; // FIXME from auth info
@@ -33,8 +35,13 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { message, id }: { message: UIMessage; id: string } =
+    const {
+      message,
+      id,
+      regenerate,
+    }: { message: UIMessage; id: string; regenerate?: boolean } =
       await req.json();
+    console.log("process message", { regenerate, message });
 
     const memory = assistantMemory;
 
@@ -51,25 +58,55 @@ export async function POST(req: NextRequest) {
       });
     } catch {}
 
-    const messages = convertMessages(result?.uiMessages || []).to("AIV5.UI");
-    messages.push(message);
+    const originalMessages = convertMessages(result?.uiMessages || [])
+      .to("AIV5.UI")
+      .filter((m) => !regenerate || m.id !== message.id);
 
-    // Use streamVNext with AI SDK v5 format (experimental)
-    const stream = await assistantAgent.stream(messages, {
-      format: "aisdk", // Enable AI SDK v5 compatibility
-      memory: {
-        thread: id,
-        resource: userId,
-      },
-    });
+    const runtimeContext = new RuntimeContext<{ mode: string }>();
+    runtimeContext.set("mode", "user");
 
-    // Stream is already in AI SDK v5 format
-    return stream.toUIMessageStreamResponse({
-      originalMessages: messages,
-      onFinish: ({ messages: newMessages }) => {
-        saveChat({ chatId: id, messages: [...messages, ...newMessages] });
-      },
-    });
+    // Begin transaction before calling agent
+    const transaction = await beginTransaction();
+
+    try {
+      // Use streamVNext with AI SDK v5 format (experimental)
+      const stream = await assistantAgent.stream([message], {
+        format: "aisdk", // Enable AI SDK v5 compatibility
+        runtimeContext,
+        memory: {
+          thread: id,
+          resource: userId,
+        },
+      });
+
+      // console.log("Message", JSON.stringify(messages, null, 2));
+      // console.log("Trace ID:", stream.traceId);
+      // console.log("View trace at: http://localhost:3000/traces/" + stream.traceId);
+
+      // Stream is already in AI SDK v5 format
+      return stream.toUIMessageStreamResponse({
+        originalMessages,
+        onFinish: async ({ messages }) => {
+          try {
+            await saveChat({
+              chatId: id,
+              // head, user message, assistant replies
+              messages: [...originalMessages, message, ...messages],
+            });
+            // Commit transaction after successful completion
+            await transaction.commit();
+          } catch (error) {
+            console.error("Error in onFinish callback:", error);
+            await transaction.rollback();
+            throw new Error("Internal Server Error");
+          }
+        },
+      });
+    } catch (error) {
+      console.error("Error during agent stream:", error);
+      await transaction.rollback();
+      throw error;
+    }
   } catch (error) {
     console.error("Chat API error:", error);
     return new Response("Internal Server Error", { status: 500 });

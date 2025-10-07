@@ -1,7 +1,9 @@
 import { redirect } from 'next/navigation';
-import { createChat } from '@/lib/chat-store';
+import { generateId } from 'ai';
 
 export default async function ChatPage() {
-  const id = await createChat();
+  // This page is now only used as a fallback for direct /chat access
+  // Generate a new chat ID and redirect
+  const id = generateId();
   redirect(`/chat/${id}`);
 }

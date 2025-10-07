@@ -1,5 +1,8 @@
 import { getAllChats } from '@/lib/chat-store';
 import Link from 'next/link';
+import NewChatButton from '@/components/new-chat-button';
+import { assistantMemory } from '@/mastra/memory';
+import { USER_ID } from '@/lib/const';
 
 function formatTime(dateString: string | null): string {
   if (!dateString) return '';
@@ -24,6 +27,13 @@ function truncateMessage(message: string | null): string {
 
 export default async function HomePage() {
   const chats = await getAllChats();
+
+  const threads = await assistantMemory.getThreadsByResourceId({
+    resourceId: USER_ID,
+    orderBy: "updatedAt",
+    sortDirection: "DESC"
+  })
+  console.log("threads", JSON.stringify(threads, null, 2));
   
   return (
     <div className="min-h-screen bg-gray-50">
@@ -31,12 +41,9 @@ export default async function HomePage() {
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-4">Personal AI Assistant</h1>
           <p className="text-gray-600 mb-6">Your AI assistant with memory capabilities</p>
-          <Link 
-            href="/chat" 
-            className="inline-block px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium"
-          >
+          <NewChatButton className="inline-block px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium">
             Start New Chat
-          </Link>
+          </NewChatButton>
         </div>
 
         {chats.length > 0 && (
@@ -45,7 +52,11 @@ export default async function HomePage() {
               <h2 className="text-lg font-semibold text-gray-800">Recent Conversations</h2>
             </div>
             <div className="divide-y divide-gray-200">
-              {chats.map((chatItem) => (
+              {chats.map((chatItem) => {
+                const thread = threads.find(t => t.id === chatItem.id);
+                const title = thread?.title || chatItem.first_message;
+                
+                return (
                 <Link
                   key={chatItem.id}
                   href={`/chat/${chatItem.id}`}
@@ -54,10 +65,10 @@ export default async function HomePage() {
                   <div className="flex justify-between items-start">
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-gray-800">
-                        {truncateMessage(chatItem.first_message)}
+                        {truncateMessage(title)}
                       </div>
                       <div className="text-xs text-gray-500 mt-1">
-                        {formatTime(chatItem.first_message_time)}
+                        {formatTime(chatItem.updated_at)}
                       </div>
                     </div>
                     <div className="text-xs text-gray-400 ml-4">
@@ -65,7 +76,7 @@ export default async function HomePage() {
                     </div>
                   </div>
                 </Link>
-              ))}
+              )})}
             </div>
           </div>
         )}
