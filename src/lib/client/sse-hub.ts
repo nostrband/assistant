@@ -265,6 +265,10 @@ export function useChatEvents(): ChatStore {
       try {
         // Validate the payload
         const validatedData = ChatMessageEventSchema.parse(msg.data);
+        validatedData.messages.forEach(m => {
+          if (m.metadata?.createdAt)
+            m.metadata.createdAt = new Date(m.metadata.createdAt);
+        });
         return {
           ...msg,
           type: "chat:message" as const,

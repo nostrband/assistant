@@ -37,8 +37,7 @@ async function initializeDatabase() {
       task TEXT NOT NULL,
       status TEXT DEFAULT '',
       thread_id TEXT DEFAULT '',
-      error TEXT DEFAULT '',
-      UNIQUE(user_id, timestamp)
+      error TEXT DEFAULT ''
     )`,
     `CREATE TABLE IF NOT EXISTS events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -116,6 +115,49 @@ async function initializeDatabase() {
   } catch (error) {
     // Migration failed, but continue - table might already be in correct format
     console.warn('Chats table migration warning:', error);
+  }
+
+  // Migrate tasks table to remove UNIQUE(user_id, timestamp) constraint
+  try {
+    // Check if the tasks table has the UNIQUE constraint by examining the schema
+    const tasksSchema = await db.execute(`SELECT sql FROM sqlite_master WHERE type='table' AND name='tasks'`);
+    const schemaSQL = tasksSchema.rows[0]?.sql as string;
+    
+    // If the schema contains the UNIQUE constraint, we need to migrate
+    if (schemaSQL && schemaSQL.includes('UNIQUE(user_id, timestamp)')) {
+      console.log('Migrating tasks table to remove UNIQUE(user_id, timestamp) constraint...');
+      
+      // Create new table without the UNIQUE constraint
+      await db.execute(`CREATE TABLE tasks_new (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        task TEXT NOT NULL,
+        status TEXT DEFAULT '',
+        thread_id TEXT DEFAULT '',
+        error TEXT DEFAULT '',
+        deleted BOOLEAN DEFAULT FALSE
+      )`);
+      
+      // Copy data from old table
+      await db.execute(`INSERT INTO tasks_new (id, user_id, timestamp, task, status, thread_id, error, deleted)
+        SELECT id, user_id, timestamp, task, status, thread_id, error, deleted FROM tasks`);
+      
+      // Drop old table and rename new one
+      await db.execute(`DROP TABLE tasks`);
+      await db.execute(`ALTER TABLE tasks_new RENAME TO tasks`);
+      
+      // Recreate indexes for tasks table
+      await db.execute(`CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id)`);
+      await db.execute(`CREATE INDEX IF NOT EXISTS idx_tasks_timestamp ON tasks(timestamp)`);
+      await db.execute(`CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)`);
+      await db.execute(`CREATE INDEX IF NOT EXISTS idx_tasks_user_status_timestamp ON tasks(user_id, status, timestamp)`);
+      
+      console.log('Tasks table migration completed successfully.');
+    }
+  } catch (error) {
+    // Migration failed, but continue - table might already be in correct format
+    console.warn('Tasks table migration warning:', error);
   }
 
   // Drop messages table if it exists (migration to Mastra memory)

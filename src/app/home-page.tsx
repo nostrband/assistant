@@ -33,7 +33,7 @@ export default async function HomePage() {
     orderBy: "updatedAt",
     sortDirection: "DESC"
   })
-  console.log("threads", JSON.stringify(threads, null, 2));
+  // console.log("threads", JSON.stringify(threads, null, 2));
   
   return (
     <div className="min-h-screen bg-gray-50">

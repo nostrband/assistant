@@ -9,6 +9,7 @@ import { assistantMemory } from "@/mastra/memory";
 import { RuntimeContext } from "@mastra/core/runtime-context";
 import { publishChatMessage } from "@/lib/server/events";
 import { run2PC } from "@/mastra/tool2pc";
+import { addCreatedAt } from "@/lib/utils";
 
 const assistantAgent = mastra.getAgent("assistantAgent");
 const userId = USER_ID; // FIXME from auth info
@@ -67,6 +68,7 @@ export async function POST(req: NextRequest) {
     runtimeContext.set("mode", "user");
 
     try {
+      const now = new Date();
 
       // Make user's message visible
       if (!originalMessages.length) {
@@ -80,15 +82,15 @@ export async function POST(req: NextRequest) {
         await updateChat({
           userId: USER_ID,
           chatId: id,
-          updatedAt: new Date(),
+          updatedAt: now,
         });
       }
 
       // Publish chat message event
       await publishChatMessage({
         chatId: id,
-        messages: [message],
-        timestamp: new Date().toISOString(),
+        messages: addCreatedAt([message]),
+        timestamp: now.toISOString(),
       });
 
       // Use streamVNext with AI SDK v5 format (experimental)
@@ -99,6 +101,7 @@ export async function POST(req: NextRequest) {
           thread: id,
           resource: userId,
         },
+        maxSteps: 10,
       });
 
       // console.log("Message", JSON.stringify(messages, null, 2));
@@ -116,7 +119,7 @@ export async function POST(req: NextRequest) {
             // Publish agent's messages event
             await publishChatMessage({
               chatId: id,
-              messages,
+              messages: addCreatedAt(messages),
               timestamp: new Date().toISOString(),
             });
           } catch (error) {

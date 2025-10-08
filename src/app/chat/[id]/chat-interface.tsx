@@ -5,7 +5,7 @@ import {
   ConversationContent,
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation";
-import { Message, MessageContent } from "@/components/ai-elements/message";
+import { MessageList } from "@/components/ai-elements/message-list";
 import {
   PromptInput,
   PromptInputActionAddAttachments,
@@ -22,33 +22,12 @@ import {
   PromptInputToolbar,
   PromptInputTools,
 } from "@/components/ai-elements/prompt-input";
-import { Actions, Action } from "@/components/ai-elements/actions";
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useChat } from "@ai-sdk/react";
+import { useChatEvents } from "@/lib/client/sse-hub";
 import { DefaultChatTransport } from "ai";
-import type { ToolUIPart } from "ai";
-import { Response } from "@/components/ai-elements/response";
-import { RefreshCcwIcon, CopyIcon } from "lucide-react";
-import {
-  Source,
-  Sources,
-  SourcesContent,
-  SourcesTrigger,
-} from "@/components/ai-elements/sources";
-import {
-  Reasoning,
-  ReasoningContent,
-  ReasoningTrigger,
-} from "@/components/ai-elements/reasoning";
-import {
-  Tool,
-  ToolContent,
-  ToolHeader,
-  ToolInput,
-  ToolOutput,
-} from "@/components/ai-elements/tool";
-import { Loader } from "@/components/ai-elements/loader";
 import { MyUIMessage } from "@/lib/server/chat-store";
+import { notificationSound } from "@/lib/client/notification-sound";
 
 interface ChatInterfaceProps {
   id: string;
@@ -60,8 +39,10 @@ export default function ChatInterface({
   initialMessages,
 }: ChatInterfaceProps) {
   const [input, setInput] = useState("");
+  const lastProcessedMessageId = useRef<number>(0);
+  const isInitialMount = useRef<boolean>(true);
 
-  const { messages, status, sendMessage, regenerate } = useChat({
+  const { messages, status, sendMessage, regenerate, setMessages } = useChat({
     id,
     messages: initialMessages,
     transport: new DefaultChatTransport({
@@ -79,6 +60,108 @@ export default function ChatInterface({
     }),
   });
 
+  // Subscribe to chat message events
+  const chatStore = useChatEvents();
+
+  // Handle new chat messages for this specific chat
+  useEffect(() => {
+    if (chatStore.messages.length === 0) return;
+
+    // Get the latest message
+    const latestMessage = chatStore.messages[chatStore.messages.length - 1];
+    if (!latestMessage?.data) return;
+
+    // Skip if we've already processed this message
+    if (latestMessage.id <= lastProcessedMessageId.current) return;
+
+    // Only show notifications after initial mount
+    if (
+      !isInitialMount.current &&
+      (!("document" in globalThis) ||
+        globalThis.document?.visibilityState !== "visible" ||
+        latestMessage.data.chatId !== id)
+    ) {
+      const payload = latestMessage.data.messages.at(-1) as MyUIMessage;
+      if (payload.role !== "user") {
+        // Play notification sound for new chat messages
+        notificationSound?.play().catch((error) => {
+          // Silently handle notification sound errors
+          console.debug("Notification sound failed:", error);
+        });
+
+        if ("Notification" in window) {
+          Notification.requestPermission().then((perm) => {
+            if (perm !== "granted") return;
+            const body = payload.parts
+              .filter((p) => p.type === "text")
+              .map((p) => p.text)
+              .join(" ");
+            new Notification("Assistant:", {
+              body,
+              tag: payload.id,
+              silent: false,
+            });
+          });
+        }
+      }
+    }
+
+    // Only process messages for the current chat
+    if (latestMessage.data.chatId !== id) return;
+
+    console.log(
+      "Processing new chat message for chat interface:",
+      latestMessage.id
+    );
+    lastProcessedMessageId.current = latestMessage.id;
+
+    try {
+      const messageData = latestMessage.data;
+
+      if (!messageData.messages || !Array.isArray(messageData.messages)) return;
+
+      // Convert the new messages to the expected format
+      const newMessages = messageData.messages as MyUIMessage[];
+
+      // Check if any of these messages are not already in our current message list
+      setMessages((currentMessages) => {
+        const currentMessageIds = new Set(currentMessages.map((msg) => msg.id));
+        const messagesToAdd: MyUIMessage[] = [];
+
+        // Find messages that aren't already in our list
+        for (const newMsg of newMessages) {
+          if (!currentMessageIds.has(newMsg.id)) {
+            messagesToAdd.push(newMsg);
+          }
+        }
+
+        if (messagesToAdd.length === 0) {
+          return currentMessages; // No new messages to add
+        }
+
+        // Merge and sort messages by creation time to maintain proper order
+        const allMessages = [...currentMessages, ...messagesToAdd];
+        allMessages.sort((a, b) => {
+          const aTime = a.metadata?.createdAt?.getTime() || 0;
+          const bTime = b.metadata?.createdAt?.getTime() || 0;
+          return aTime - bTime;
+        });
+
+        return allMessages;
+      });
+    } catch (error) {
+      console.error(
+        "Error processing chat message event in chat interface:",
+        error
+      );
+    }
+
+    // Mark that we've completed the initial mount processing
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+    }
+  }, [chatStore.lastId, id, setMessages]);
+
   const handleSubmit = (message: PromptInputMessage) => {
     const hasText = Boolean(message.text);
     const hasAttachments = Boolean(message.files?.length);
@@ -90,131 +173,27 @@ export default function ChatInterface({
     sendMessage({
       text: message.text || "Sent with attachments",
       files: message.files,
+      metadata: {
+        createdAt: new Date(),
+      },
     });
     setInput("");
   };
+
+  const handleRegenerate = useCallback((messageId: string) => {
+    regenerate({ messageId });
+  }, [regenerate]);
 
   return (
     <div className="max-w-4xl mx-auto p-6 relative size-full h-screen">
       <div className="flex flex-col h-full">
         <Conversation className="h-full">
           <ConversationContent>
-            {messages.map((message) => (
-              <div key={message.id}>
-                {message.role === "assistant" &&
-                  message.parts.filter((part) => part.type === "source-url")
-                    .length > 0 && (
-                    <Sources>
-                      <SourcesTrigger
-                        count={
-                          message.parts.filter(
-                            (part) => part.type === "source-url"
-                          ).length
-                        }
-                      />
-                      {message.parts
-                        .filter((part) => part.type === "source-url")
-                        .map((part, sourceIndex) => (
-                          <SourcesContent key={`${message.id}-${sourceIndex}`}>
-                            <Source
-                              key={`${message.id}-${sourceIndex}`}
-                              href={part.url}
-                              title={part.url}
-                            />
-                          </SourcesContent>
-                        ))}
-                    </Sources>
-                  )}
-                <Message from={message.role}>
-                  <MessageContent>
-                    {message.parts.map((part, partIndex) => {
-                      switch (part.type) {
-                        case "text":
-                          return (
-                            <Response key={`${message.id}-${partIndex}`}>
-                              {part.text}
-                            </Response>
-                          );
-                        case "reasoning":
-                          if (
-                            status === "streaming" &&
-                            message.id === messages.at(-1)?.id
-                          )
-                            return (
-                              <Reasoning
-                                key={`${message.id}-${partIndex}`}
-                                className="w-full"
-                                isStreaming={
-                                  status === "streaming" &&
-                                  partIndex === message.parts.length - 1 &&
-                                  message.id === messages.at(-1)?.id
-                                }
-                              >
-                                <ReasoningTrigger />
-                                <ReasoningContent>{part.text}</ReasoningContent>
-                              </Reasoning>
-                            );
-                        default:
-                          // Handle tool parts
-                          if (part.type.startsWith("tool-")) {
-                            const toolPart = part as ToolUIPart;
-                            return (
-                              <Tool key={`${message.id}-${partIndex}`} defaultOpen={status === "streaming"}>
-                                <ToolHeader type={toolPart.type} state={toolPart.state} />
-                                <ToolContent>
-                                  <ToolInput input={toolPart.input} />
-                                  <ToolOutput
-                                    output={toolPart.output}
-                                    errorText={toolPart.errorText}
-                                  />
-                                </ToolContent>
-                              </Tool>
-                            );
-                          }
-                          return null;
-                      }
-                    })}
-                    {status !== "error" &&
-                      !message.parts.filter((m) => m.type === "text")
-                        .length && <Loader />}
-                    {status === "error" && message.id === messages.at(-1)?.id && (
-                      <div className="text-red-500 text-sm mt-2 px-4">
-                        Error, please retry later!
-                      </div>
-                    )}
-                    <div className="text-[10px] text-gray-400">{message.metadata?.createdAt.toLocaleString() || ""}</div>
-                  </MessageContent>
-                </Message>
-                {message.role === "assistant" &&
-                  (status === "ready" || status === "error") && (
-                    <Actions>
-                      {status === "error" && (
-                        <Action
-                          onClick={() => regenerate({ messageId: message.id })}
-                          label="Regenerate"
-                        >
-                          <RefreshCcwIcon className="size-3" />
-                        </Action>
-                      )}
-                      <Action
-                        onClick={() => {
-                          const textParts = message.parts.filter(
-                            (part) => part.type === "text"
-                          );
-                          const allText = textParts
-                            .map((part) => part.text)
-                            .join("\n");
-                          navigator.clipboard.writeText(allText);
-                        }}
-                        label="Copy"
-                      >
-                        <CopyIcon className="size-3" />
-                      </Action>
-                    </Actions>
-                  )}
-              </div>
-            ))}
-            {status === "submitted" && <Loader />}
+            <MessageList
+              messages={messages}
+              status={status}
+              onRegenerate={handleRegenerate}
+            />
           </ConversationContent>
           <ConversationScrollButton />
         </Conversation>

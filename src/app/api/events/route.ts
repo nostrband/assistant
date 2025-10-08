@@ -6,6 +6,41 @@ export const runtime = "nodejs"; // ensure Node runtime for EventEmitter
 const encoder = new TextEncoder();
 const KEEPALIVE_MS = 15_000;
 
+// Use global registry to track connections across all instances
+declare global {
+  var __sseConnections: Set<() => void> | undefined;
+  var __sseHandlersRegistered: boolean | undefined;
+}
+
+// Initialize global connection registry
+if (!globalThis.__sseConnections) {
+  globalThis.__sseConnections = new Set<() => void>();
+}
+
+// Register signal handlers only once globally
+if (!globalThis.__sseHandlersRegistered) {
+  globalThis.__sseHandlersRegistered = true;
+  
+  const handleShutdown = (signal: string) => {
+    console.log(`${signal} received, closing ${globalThis.__sseConnections?.size || 0} SSE connections...`);
+    if (globalThis.__sseConnections) {
+      globalThis.__sseConnections.forEach(cleanup => {
+        try {
+          cleanup();
+        } catch (e) {
+          console.error('Error during SSE cleanup:', e);
+        }
+      });
+      globalThis.__sseConnections.clear();
+    }
+    // Force exit
+    process.exit(0);
+  };
+  
+  process.on('SIGTERM', () => handleShutdown('SIGTERM'));
+  process.on('SIGINT', () => handleShutdown('SIGINT'));
+}
+
 function writeSSE(row: EventRow): string {
   return (
     `id: ${row.id}\n` +              // lets browsers auto-resume
@@ -47,7 +82,7 @@ export async function GET(req: Request) {
           // Stream might be closed
           clearInterval(hb);
         }
-      }, KEEPALIVE_MS);
+      }, KEEPALIVE_MS).unref(); // Don't keep process alive
 
       // 3) live subscription - send all events to all clients as specified
       const handlers: Array<() => void> = [];
@@ -70,14 +105,20 @@ export async function GET(req: Request) {
 
       // 4) cleanup on close/abort
       const cleanup = () => {
+        console.log('SSE cleanup called');
         clearInterval(hb);
         handlers.forEach(h => h());
-        try { 
-          controller.close(); 
+        globalThis.__sseConnections?.delete(cleanup); // Remove from active connections
+        try {
+          controller.close();
         } catch {
           // Stream already closed
         }
       };
+
+      // Register this connection for SIGTERM cleanup
+      globalThis.__sseConnections?.add(cleanup);
+      console.log(`SSE connection registered, total active: ${globalThis.__sseConnections?.size || 0}`);
 
       // Access abort signal from request if available
       const abort = req.signal;
