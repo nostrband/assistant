@@ -1,4 +1,4 @@
-import { getAllChats } from '@/lib/chat-store';
+import { getAllChats } from '@/lib/server/chat-store';
 import Link from 'next/link';
 import NewChatButton from '@/components/new-chat-button';
 import { assistantMemory } from '@/mastra/memory';

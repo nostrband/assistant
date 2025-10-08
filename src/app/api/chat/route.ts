@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { type UIMessage } from "ai";
 import { mastra } from "@/mastra";
 import { convertMessages, UIMessageWithMetadata } from "@mastra/core/agent";
-import { saveChat } from "@/lib/chat-store";
+import { createChat, updateChat } from "@/lib/server/chat-store";
 import { USER_ID } from "@/lib/const";
 import { CoreMessage } from "@mastra/core";
 import { assistantMemory } from "@/mastra/memory";
 import { RuntimeContext } from "@mastra/core/runtime-context";
-import { beginTransaction } from "@/lib/database";
+import { publishChatMessage } from "@/lib/server/events";
+import { run2PC } from "@/mastra/tool2pc";
 
 const assistantAgent = mastra.getAgent("assistantAgent");
 const userId = USER_ID; // FIXME from auth info
@@ -65,10 +66,31 @@ export async function POST(req: NextRequest) {
     const runtimeContext = new RuntimeContext<{ mode: string }>();
     runtimeContext.set("mode", "user");
 
-    // Begin transaction before calling agent
-    const transaction = await beginTransaction();
-
     try {
+
+      // Make user's message visible
+      if (!originalMessages.length) {
+        await createChat({
+          userId: USER_ID,
+          chatId: id,
+          // user's message
+          message,
+        });
+      } else {
+        await updateChat({
+          userId: USER_ID,
+          chatId: id,
+          updatedAt: new Date(),
+        });
+      }
+
+      // Publish chat message event
+      await publishChatMessage({
+        chatId: id,
+        messages: [message],
+        timestamp: new Date().toISOString(),
+      });
+
       // Use streamVNext with AI SDK v5 format (experimental)
       const stream = await assistantAgent.stream([message], {
         format: "aisdk", // Enable AI SDK v5 compatibility
@@ -88,23 +110,23 @@ export async function POST(req: NextRequest) {
         originalMessages,
         onFinish: async ({ messages }) => {
           try {
-            await saveChat({
+            // If all ok - try to apply changes made by tools
+            await run2PC(runtimeContext);
+
+            // Publish agent's messages event
+            await publishChatMessage({
               chatId: id,
-              // head, user message, assistant replies
-              messages: [...originalMessages, message, ...messages],
+              messages,
+              timestamp: new Date().toISOString(),
             });
-            // Commit transaction after successful completion
-            await transaction.commit();
           } catch (error) {
             console.error("Error in onFinish callback:", error);
-            await transaction.rollback();
             throw new Error("Internal Server Error");
           }
         },
       });
     } catch (error) {
       console.error("Error during agent stream:", error);
-      await transaction.rollback();
       throw error;
     }
   } catch (error) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import NextImage from "next/image";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -90,7 +91,7 @@ export function PromptInputAttachment({
       {...props}
     >
       {data.mediaType?.startsWith("image/") && data.url ? (
-        <img
+        <NextImage
           alt={data.filename || "attachment"}
           className="size-full rounded-md object-cover"
           height={56}
@@ -420,7 +421,7 @@ export const PromptInput = ({
 
     // Convert blob URLs to data URLs asynchronously
     Promise.all(
-      items.map(async ({ id, ...item }) => {
+      items.map(async (item) => {
         if (item.url && item.url.startsWith("blob:")) {
           return {
             ...item,

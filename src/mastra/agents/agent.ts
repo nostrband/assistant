@@ -5,10 +5,9 @@ import { listChatsTool } from "../tools/list-chats";
 import { addTaskTool } from "../tools/add-task";
 import { listTasksTool } from "../tools/list-tasks";
 import { deleteTaskTool } from "../tools/delete-task";
-import { getCurrentTimeTool } from "../tools/get-current-time";
 import { assistantMemory } from "../memory";
 import { UnicodeNormalizer } from "@mastra/core/processors";
-import { CleanFinalMessageProcessor, TimestampingProcessor } from "../processor";
+import { TimestampingProcessor } from "../processor";
 
 // Configure OpenRouter provider
 const openrouter = createOpenRouter({
@@ -31,7 +30,7 @@ const openrouter = createOpenRouter({
 // Create the AI assistant agent with memory
 export const assistantAgent = new Agent({
   name: "Personal Assistant",
-  model: openrouter("openai/gpt-oss-120b"),
+  model: openrouter(process.env.AGENT_MODEL || "openai/gpt-oss-120b"),
   memory: assistantMemory,
   tools: {
     sendMessageTool,

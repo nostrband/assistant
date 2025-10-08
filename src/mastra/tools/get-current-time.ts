@@ -45,7 +45,7 @@ export const getCurrentTimeTool = createTool({
         const offsetSign = offsetMs >= 0 ? '+' : '-';
         offsetString = `UTC${offsetSign}${offsetHours.toString().padStart(2, '0')}:${offsetMinutes.toString().padStart(2, '0')}`;
         timezoneDisplay = timezone;
-      } catch (timezoneError) {
+      } catch {
         // Fallback to UTC if timezone is invalid
         localTime = formatDateTime(now, "UTC");
         offsetString = "UTC+00:00";

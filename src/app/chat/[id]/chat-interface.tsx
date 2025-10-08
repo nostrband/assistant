@@ -26,7 +26,7 @@ import { Actions, Action } from "@/components/ai-elements/actions";
 import { useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import type { UIMessage, ToolUIPart } from "ai";
+import type { ToolUIPart } from "ai";
 import { Response } from "@/components/ai-elements/response";
 import { RefreshCcwIcon, CopyIcon } from "lucide-react";
 import {
@@ -48,10 +48,11 @@ import {
   ToolOutput,
 } from "@/components/ai-elements/tool";
 import { Loader } from "@/components/ai-elements/loader";
+import { MyUIMessage } from "@/lib/server/chat-store";
 
 interface ChatInterfaceProps {
   id: string;
-  initialMessages: UIMessage[];
+  initialMessages: MyUIMessage[];
 }
 
 export default function ChatInterface({
@@ -181,6 +182,7 @@ export default function ChatInterface({
                         Error, please retry later!
                       </div>
                     )}
+                    <div className="text-[10px] text-gray-400">{message.metadata?.createdAt.toLocaleString() || ""}</div>
                   </MessageContent>
                 </Message>
                 {message.role === "assistant" &&

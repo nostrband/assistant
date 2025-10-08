@@ -1,6 +1,6 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
-import { listTasksWithOptions } from "@/lib/task-store";
+import { listTasks } from "@/lib/server/task-store";
 
 export const listTasksTool = createTool({
   id: "list-tasks",
@@ -29,7 +29,7 @@ Use this tool to see what tasks are scheduled or have been completed.`,
         untilTimestamp = Math.floor(date.getTime() / 1000);
       }
       
-      const tasks = await listTasksWithOptions(!!include_finished, untilTimestamp);
+      const tasks = await listTasks(!!include_finished, untilTimestamp);
       
       return {
         success: true,

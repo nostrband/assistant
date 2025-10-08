@@ -1,7 +1,8 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { USER_ID } from "@/lib/const";
-import { setTask } from "@/lib/task-store";
+import { addTask } from "@/lib/server/task-store";
+import { setTool2PC } from "../tool2pc";
 
 export const addTaskTool = createTool({
   id: "add-task",
@@ -13,29 +14,48 @@ add a task on the proper date-time and set task description to be "use send-mess
 NOTE: Always check current time before adding a task, do not rely on timestamps mentioned in message history or documents.
 `,
   inputSchema: z.object({
-    datetime: z.string().describe("Date and time when the task should be executed (ISO 8601 format, e.g., '2025-10-06T14:30:00Z' or '2025-10-06 14:30')"),
-    task: z.string().describe("Description of the task, will be passed back to you (the assistant)."),
+    datetime: z
+      .string()
+      .describe(
+        "Date and time when the task should be executed (ISO 8601 format, e.g., '2025-10-06T14:30:00Z' or '2025-10-06 14:30')"
+      ),
+    task: z
+      .string()
+      .describe(
+        "Description of the task, will be passed back to you (the assistant)."
+      ),
   }),
-  execute: async ({ context }) => {
+  execute: async ({ context, runtimeContext }) => {
     const { datetime, task } = context;
-    
+
     try {
       // Convert datetime string to timestamp
       const date = new Date(datetime);
-      
+
       // Validate the date
-      if (isNaN(date.getTime())) {
-        return {
-          success: false,
-          error: "Invalid datetime format. Please use ISO 8601 format (e.g., '2025-10-06T14:30:00Z' or '2025-10-06 14:30')",
-        };
-      }
-      
+      if (isNaN(date.getTime()))
+        throw new Error(
+          "Invalid datetime format. Please use ISO 8601 format (e.g., '2025-10-06T14:30:00Z' or '2025-10-06 14:30')"
+        );
+
       const timestamp = Math.floor(date.getTime() / 1000); // Convert to Unix timestamp
-      
-      // Call setTask with USER_ID as user_id parameter
-      await setTask(USER_ID, timestamp, task);
-      
+
+      // Set 2-phase-commit protocol to apply or revert these changes
+      setTool2PC({
+        runtimeContext,
+        tryCommit: async () => {
+          console.log("try commit add task");
+        },
+        rollback: async () => {
+          console.log("rollback add task");
+        },
+        commit: async () => {
+          console.log("commit add task");
+          // addTask always succeeds, so no need to tryCommit
+          await addTask(USER_ID, timestamp, task);
+        },
+      });
+
       return {
         success: true,
         message: "Task set successfully",
@@ -50,7 +70,8 @@ NOTE: Always check current time before adding a task, do not rely on timestamps 
       console.error("Error setting task:", error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Unknown error occurred",
+        error:
+          error instanceof Error ? error.message : "Unknown error occurred",
       };
     }
   },

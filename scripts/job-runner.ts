@@ -1,6 +1,6 @@
 // scripts/job-runner.ts
 import 'dotenv/config';
-import { getNextTask } from '../src/lib/task-store';
+import { getNextTask } from '../src/lib/server/task-store';
 import { USER_ID } from '../src/lib/const';
 
 let isShuttingDown = false;
@@ -27,7 +27,7 @@ async function checkTasks() {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            timestamp: task.timestamp,
+            id: task.id,
           }),
         });
 

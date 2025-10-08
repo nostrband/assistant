@@ -1,6 +1,6 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
-import { getAllChats } from "@/lib/chat-store";
+import { getAllChats } from "@/lib/server/chat-store";
 
 export const listChatsTool = createTool({
   id: "list-chats",

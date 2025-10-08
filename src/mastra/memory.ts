@@ -1,7 +1,7 @@
 import { Memory } from "@mastra/memory";
 import { LibSQLStore } from "@mastra/libsql";
 import { TokenLimiter } from "@mastra/memory/processors";
-import getDatabase from "@/lib/database";
+import getDatabase from "@/lib/server/database";
 
 // Configure memory with LibSQL storage
 export const assistantMemory = new Memory({

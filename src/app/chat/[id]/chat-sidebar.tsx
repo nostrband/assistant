@@ -1,5 +1,9 @@
+"use client";
+
 import Link from 'next/link';
 import NewChatButton from '@/components/new-chat-button';
+import { useChatEvents } from '@/lib/client/sse-hub';
+import { useState, useEffect, useRef } from 'react';
 
 interface Chat {
   id: string;
@@ -9,7 +13,7 @@ interface Chat {
 }
 
 interface ChatSidebarProps {
-  chats: Chat[];
+  initialChats: Chat[];
   currentChatId: string;
 }
 
@@ -34,7 +38,76 @@ function truncateMessage(message: string | null): string {
   return message.length > 50 ? message.substring(0, 50) + '...' : message;
 }
 
-export default function ChatSidebar({ chats, currentChatId }: ChatSidebarProps) {
+export default function ChatSidebar({ initialChats, currentChatId }: ChatSidebarProps) {
+  const [chats, setChats] = useState<Chat[]>(initialChats);
+  const lastProcessedMessageId = useRef<number>(0);
+  
+  // Subscribe to chat message events
+  const chatStore = useChatEvents();
+  
+  // Handle new chat messages
+  useEffect(() => {
+    if (chatStore.messages.length === 0) return;
+    
+    // Get the latest message
+    const latestMessage = chatStore.messages[chatStore.messages.length - 1];
+    if (!latestMessage?.data) return;
+    
+    // Skip if we've already processed this message
+    if (latestMessage.id <= lastProcessedMessageId.current) return;
+    
+    console.log("Processing new chat message:", latestMessage.id);
+    lastProcessedMessageId.current = latestMessage.id;
+    
+    try {
+      const messageData = latestMessage.data;
+      
+      if (!messageData.chatId) return;
+      
+      // Find the first user message to use as chat title
+      let firstMessageContent: string | null = null;
+      if (messageData.messages && Array.isArray(messageData.messages)) {
+        const firstMessage = messageData.messages[0];
+        firstMessageContent = firstMessage?.parts
+          ?.filter((part: { type: string; text?: string }) => part.type === 'text')
+          ?.map((part: { type: string; text?: string }) => part.text)
+          ?.join('') || null;
+      }
+      
+      setChats(prevChats => {
+        const existingChatIndex = prevChats.findIndex(chat => chat.id === messageData.chatId);
+        
+        if (existingChatIndex >= 0) {
+          // Update existing chat - move to top and update timestamp
+          const updatedChats = [...prevChats];
+          const existingChat = updatedChats[existingChatIndex];
+          updatedChats.splice(existingChatIndex, 1);
+          
+          const updatedChat = {
+            ...existingChat,
+            updated_at: messageData.timestamp,
+            // Update first message if we have new content and the chat doesn't have one yet
+            first_message: existingChat.first_message || firstMessageContent,
+          };
+          
+          return [updatedChat, ...updatedChats];
+        } else {
+          // Add new chat at the top
+          const newChat: Chat = {
+            id: messageData.chatId,
+            updated_at: messageData.timestamp,
+            first_message: firstMessageContent,
+            first_message_time: messageData.timestamp,
+          };
+          
+          return [newChat, ...prevChats];
+        }
+      });
+    } catch (error) {
+      console.error('Error processing chat message event:', error);
+    }
+  }, [chatStore.lastId]);
+  
   // Check if current chat is in the saved chats list
   const isCurrentChatSaved = chats.some(chat => chat.id === currentChatId);
   
@@ -88,7 +161,7 @@ export default function ChatSidebar({ chats, currentChatId }: ChatSidebarProps) 
                       {truncateMessage(chatItem.first_message)}
                     </div>
                     <div className="text-xs text-gray-500 mt-1">
-                      {formatTime(chatItem.first_message_time)}
+                      {formatTime(chatItem.updated_at)}
                     </div>
                   </div>
                   {currentChatId === chatItem.id && (

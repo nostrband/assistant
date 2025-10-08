@@ -3,8 +3,16 @@ import { z } from "zod";
 import { generateId } from "ai";
 import { convertMessages, type MastraMessageV2 } from "@mastra/core/agent";
 import { USER_ID } from "@/lib/const";
-import { saveChat } from "@/lib/chat-store";
+import {
+  createChat,
+  createChatId,
+  deleteChat,
+  updateChat,
+} from "@/lib/server/chat-store";
 import { assistantMemory } from "../memory";
+import { publishChatMessage } from "@/lib/server/events";
+import { StorageThreadType } from "@mastra/core";
+import { setTool2PC } from "../tool2pc";
 
 const userId = USER_ID;
 
@@ -38,11 +46,11 @@ export const sendMessageTool = createTool({
         "Optional chat ID. If not provided (null or undefined), a new chat will be created"
       ),
   }),
-  execute: async ({ context }) => {
+  execute: async ({ context, runtimeContext }) => {
     const { content, chat_id } = context;
 
     // Get or create chat ID
-    const chatId = chat_id || generateId();
+    const chatId = chat_id || (await createChatId());
 
     // Get memory instance
     const memory = assistantMemory;
@@ -62,63 +70,105 @@ export const sendMessageTool = createTool({
             : content,
       },
     };
-    // console.log("send message", assistantMessage);
 
-    try {
-      if (chat_id) {
-        const thread = await memory.getThreadById({
-          threadId: chat_id,
-        });
-        if (!thread || thread.resourceId !== userId)
-          throw new Error("No such thread");
+    // Convert to UIMessage format for saveChat
+    const uiMessage = convertMessages([assistantMessage]).to("AIV5.UI")[0];
+    console.log("send_message", uiMessage);
 
-        await memory.saveThread({
-          thread: {
-            ...thread,
-            updatedAt: assistantMessage.createdAt,
-          },
-        });
-      } else {
-        await memory.saveThread({
-          thread: {
-            id: chatId,
-            createdAt: assistantMessage.createdAt,
-            resourceId: userId,
-            updatedAt: assistantMessage.createdAt,
-            title: ""
-          },
-        });
-      }
-
-      // Save message to memory using the correct format
-      await memory.saveMessages({
-        messages: [assistantMessage],
-        format: "v2",
+    // Get thread we're writing to
+    let thread: StorageThreadType | null = null;
+    if (chat_id) {
+      thread = await memory.getThreadById({
+        threadId: chat_id,
       });
-
-      // Convert to UIMessage format for saveChat
-      const uiMessage = convertMessages([assistantMessage]).to("AIV5.UI")[0];
-      console.log("send_message", uiMessage);
-
-      // Update chat metadata in database
-      await saveChat({
-        chatId,
-        messages: [uiMessage],
-      });
-
-      return {
-        success: true,
-        chat_id: chatId,
-        message_id: assistantMessage.id,
-        message: "Message sent successfully",
-      };
-    } catch (error) {
-      console.error("Error sending message:", error);
-      return {
-        success: false,
-        error:
-          error instanceof Error ? error.message : "Unknown error occurred",
-      };
+      if (!thread || thread.resourceId !== userId)
+        throw new Error("No such thread");
     }
+
+    // Set 2-phase-commit protocol to apply or revert these changes
+    setTool2PC({
+      runtimeContext,
+      tryCommit: async () => {
+        console.log("try commit send message");
+        if (thread) {
+          await memory.saveThread({
+            thread: {
+              ...thread,
+              updatedAt: assistantMessage.createdAt,
+            },
+          });
+
+          await updateChat({
+            userId: USER_ID,
+            chatId,
+            updatedAt: assistantMessage.createdAt,
+          });
+        } else {
+          await memory.saveThread({
+            thread: {
+              id: chatId,
+              createdAt: assistantMessage.createdAt,
+              resourceId: userId,
+              updatedAt: assistantMessage.createdAt,
+              title: "",
+            },
+          });
+
+          await createChat({
+            userId: USER_ID,
+            chatId,
+            message: uiMessage,
+          });
+        }
+
+        // Save message to memory using the correct format
+        await memory.saveMessages({
+          messages: [assistantMessage],
+          format: "v2",
+        });
+      },
+      rollback: async () => {
+        console.log("rollback send message");
+
+        // Update to older version of the thread
+        if (thread) {
+          await memory.saveThread({
+            thread,
+          });
+          await updateChat({
+            userId: USER_ID,
+            chatId,
+            updatedAt: thread.updatedAt,
+          });
+        } else {
+          await memory.deleteThread(chatId);
+          await deleteChat({
+            userId: USER_ID,
+            chatId,
+          });
+        }
+
+        // Drop the message
+        await memory.deleteMessages([assistantMessage.id]);
+      },
+      commit: async () => {
+        console.log("commit send message");
+
+        // Publish event for real-time notifications
+        await publishChatMessage({
+          chatId,
+          messages: [uiMessage],
+          timestamp: assistantMessage.createdAt.toISOString(),
+          source: "send-message-tool",
+        });
+      },
+    });
+
+    return {
+      success: true,
+      chat_id: chatId,
+      message_id: assistantMessage.id,
+      message: "Message sent successfully",
+    };
   },
 });
