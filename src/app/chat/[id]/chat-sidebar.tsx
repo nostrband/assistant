@@ -10,6 +10,7 @@ interface Chat {
   updated_at: string;
   first_message: string | null;
   first_message_time: string | null;
+  read_at: string | null;
 }
 
 interface ChatSidebarProps {
@@ -36,6 +37,11 @@ function formatTime(dateString: string | null): string {
 function truncateMessage(message: string | null): string {
   if (!message) return 'New chat';
   return message.length > 50 ? message.substring(0, 50) + '...' : message;
+}
+
+function isUnread(chat: Chat): boolean {
+  if (!chat.read_at) return true; // Never read
+  return new Date(chat.updated_at) > new Date(chat.read_at);
 }
 
 export default function ChatSidebar({ initialChats, currentChatId }: ChatSidebarProps) {
@@ -98,6 +104,7 @@ export default function ChatSidebar({ initialChats, currentChatId }: ChatSidebar
             updated_at: messageData.timestamp,
             first_message: firstMessageContent,
             first_message_time: messageData.timestamp,
+            read_at: null,
           };
           
           return [newChat, ...prevChats];
@@ -164,7 +171,7 @@ export default function ChatSidebar({ initialChats, currentChatId }: ChatSidebar
                       {formatTime(chatItem.updated_at)}
                     </div>
                   </div>
-                  {currentChatId === chatItem.id && (
+                  {isUnread(chatItem) && (
                     <div className="w-2 h-2 bg-blue-500 rounded-full ml-2 flex-shrink-0"></div>
                   )}
                 </div>

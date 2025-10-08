@@ -94,6 +94,17 @@ export async function deleteChat(opts: {
   if (r.rowsAffected <= 0) throw new Error("Failed to delete chat");
 }
 
+// Mark chat as read by updating read_at timestamp
+export async function readChat(userId: string, chatId: string): Promise<void> {
+  const db = getDatabase();
+  const now = new Date().toISOString();
+  
+  await db.execute({
+    sql: `UPDATE chats SET read_at = ? WHERE id = ?`,
+    args: [now, chatId],
+  });
+}
+
 // Get all chats for sidebar - now reads directly from chats table
 export async function getAllChats(): Promise<
   Array<{
@@ -101,6 +112,7 @@ export async function getAllChats(): Promise<
     updated_at: string;
     first_message: string | null;
     first_message_time: string | null;
+    read_at: string | null;
   }>
 > {
   const db = getDatabase();
@@ -109,7 +121,8 @@ export async function getAllChats(): Promise<
             id,
             updated_at,
             first_message_content as first_message,
-            first_message_time
+            first_message_time,
+            read_at
           FROM chats
           ORDER BY updated_at DESC
           LIMIT 100`,
@@ -121,5 +134,6 @@ export async function getAllChats(): Promise<
     updated_at: row.updated_at as string,
     first_message: row.first_message as string | null,
     first_message_time: row.first_message_time as string | null,
+    read_at: row.read_at as string | null,
   }));
 }

@@ -1,4 +1,4 @@
-import { loadChat, getAllChats } from '@/lib/server/chat-store';
+import { loadChat, getAllChats, readChat } from '@/lib/server/chat-store';
 import ChatInterface from './chat-interface';
 import ChatSidebar from './chat-sidebar';
 import { USER_ID } from '@/lib/const';
@@ -13,6 +13,14 @@ export default async function ChatPage({ params }: ChatPageProps) {
     loadChat(USER_ID, id),
     getAllChats()
   ]);
+  
+  // Mark chat as read when page is rendered
+  try {
+    await readChat(USER_ID, id);
+  } catch (error) {
+    // Ignore error if chat doesn't exist yet (new chat)
+    console.warn('Could not mark chat as read:', error);
+  }
   
   return (
     <div className="flex h-screen bg-gray-50">

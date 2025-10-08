@@ -28,7 +28,8 @@ async function initializeDatabase() {
     `CREATE TABLE IF NOT EXISTS chats (
       id TEXT PRIMARY KEY,
       created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-      updated_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      updated_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      read_at DATETIME
     )`,
     `CREATE TABLE IF NOT EXISTS tasks (
       id TEXT PRIMARY KEY,
@@ -63,6 +64,18 @@ async function initializeDatabase() {
 
   try {
     await db.execute(`ALTER TABLE tasks ADD COLUMN deleted BOOLEAN DEFAULT FALSE;`);
+  } catch {
+    // Column already exists
+  }
+
+  try {
+    await db.execute(`ALTER TABLE tasks ADD COLUMN type TEXT DEFAULT '';`);
+  } catch {
+    // Column already exists
+  }
+
+  try {
+    await db.execute(`ALTER TABLE chats ADD COLUMN read_at DATETIME;`);
   } catch {
     // Column already exists
   }

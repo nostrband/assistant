@@ -1,6 +1,7 @@
 // import "server-only";
 import { generateId } from "ai";
 import getDatabase from "./database";
+import { TASK_TYPE_PLANNER } from "../const";
 
 export interface Task {
   id: string;
@@ -10,22 +11,24 @@ export interface Task {
   status: string;
   thread_id: string;
   error: string;
+  type: string;
 }
 
 // Set a new task - fails if task for this timestamp already exists for this user
 export async function addTask(
   user_id: string,
   timestamp: number,
-  task: string
+  task: string,
+  type: string = ''
 ): Promise<string> {
   const db = getDatabase();
   const id = generateId();
 
   // Insert new task
   await db.execute({
-    sql: `INSERT INTO tasks (id, user_id, timestamp, task, status, thread_id, error)
-          VALUES (?, ?, ?, ?, '', '', '')`,
-    args: [id, user_id, timestamp, task],
+    sql: `INSERT INTO tasks (id, user_id, timestamp, task, status, thread_id, error, type)
+          VALUES (?, ?, ?, ?, '', '', '', ?)`,
+    args: [id, user_id, timestamp, task, type],
   });
 
   return id;
@@ -38,7 +41,7 @@ export async function listTasks(
 ): Promise<Task[]> {
   const db = getDatabase();
 
-  let sql = `SELECT id, user_id, timestamp, task, status, thread_id, error
+  let sql = `SELECT id, user_id, timestamp, task, status, thread_id, error, type
              FROM tasks`;
   const args: (string | number)[] = [];
 
@@ -51,6 +54,9 @@ export async function listTasks(
 
   // Always filter out deleted tasks
   conditions.push("(deleted IS NULL OR deleted = FALSE)");
+
+  // Always filter out planner tasks (only show regular tasks to users)
+  conditions.push("(type IS NULL OR type = '')");
 
   // Filter by until timestamp if provided
   if (until !== undefined) {
@@ -79,6 +85,7 @@ export async function listTasks(
     status: row.status as string,
     thread_id: row.thread_id as string,
     error: row.error as string,
+    type: (row.type as string) || '',
   }));
 }
 
@@ -103,7 +110,7 @@ export async function getNextTask(user_id: string): Promise<Task | null> {
   const db = getDatabase();
   const currentTimeSeconds = Math.floor(Date.now() / 1000); // Convert milliseconds to seconds
   const result = await db.execute({
-    sql: `SELECT id, user_id, timestamp, task, status, thread_id, error
+    sql: `SELECT id, user_id, timestamp, task, status, thread_id, error, type
           FROM tasks
           WHERE user_id = ? AND status = '' AND timestamp <= ? AND (deleted IS NULL OR deleted = FALSE)
           ORDER BY timestamp ASC
@@ -124,6 +131,7 @@ export async function getNextTask(user_id: string): Promise<Task | null> {
     status: row.status as string,
     thread_id: row.thread_id as string,
     error: row.error as string,
+    type: (row.type as string) || '',
   };
 }
 
@@ -134,7 +142,7 @@ export async function getTask(
 ): Promise<Task> {
   const db = getDatabase();
   const result = await db.execute({
-    sql: `SELECT id, user_id, timestamp, task, status, thread_id, error
+    sql: `SELECT id, user_id, timestamp, task, status, thread_id, error, type
           FROM tasks
           WHERE user_id = ? AND id = ? AND (deleted IS NULL OR deleted = FALSE)`,
     args: [user_id, id],
@@ -151,6 +159,7 @@ export async function getTask(
     status: row.status as string,
     thread_id: row.thread_id as string,
     error: row.error as string,
+    type: (row.type as string) || '',
   };
 }
 
@@ -188,4 +197,31 @@ export async function undeleteTask(
     args: [id, user_id],
   });
   if (r.rowsAffected <= 0) throw new Error("Failed to undelete the task");
+}
+
+// Check if there's a planner task within the last 24 hours
+export async function hasPlannerTaskInLast24Hours(user_id: string): Promise<boolean> {
+  const db = getDatabase();
+  const twentyFourHoursAgo = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
+  
+  const result = await db.execute({
+    sql: `SELECT COUNT(*) as count
+          FROM tasks
+          WHERE user_id = ? AND type = ? AND timestamp >= ? AND (deleted IS NULL OR deleted = FALSE)`,
+    args: [user_id, TASK_TYPE_PLANNER, twentyFourHoursAgo],
+  });
+
+  const count = result.rows[0]?.count as number;
+  return count > 0;
+}
+
+// Get the next midnight timestamp in local time
+// FIXME: This assumes the server's timezone is the user's local timezone.
+// In a multi-user system, this should be configurable per user or use a specific timezone.
+export function getNextMidnightTimestamp(): number {
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(0, 1, 0, 0); // 00:01 to make sure "today" means today
+  return Math.floor(tomorrow.getTime() / 1000);
 }

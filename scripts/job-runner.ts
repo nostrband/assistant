@@ -1,7 +1,7 @@
 // scripts/job-runner.ts
 import 'dotenv/config';
-import { getNextTask } from '../src/lib/server/task-store';
-import { USER_ID } from '../src/lib/const';
+import { getNextTask, hasPlannerTaskInLast24Hours, addTask } from '../src/lib/server/task-store';
+import { USER_ID, TASK_TYPE_PLANNER, PLANNER_TASK_MESSAGE } from '../src/lib/const';
 
 let isShuttingDown = false;
 let timeoutId: NodeJS.Timeout | null = null;
@@ -52,9 +52,34 @@ async function checkTasks() {
   }
 }
 
+async function initializePlannerTask() {
+  try {
+    // Check if there's a planner task within the last 24 hours
+    const hasPlannerTask = await hasPlannerTaskInLast24Hours(USER_ID);
+    
+    if (!hasPlannerTask) {
+      console.log('[jobs] No planner task found in last 24 hours, creating one now');
+      const currentTimestamp = Math.floor(Date.now() / 1000);
+      await addTask(USER_ID, currentTimestamp, PLANNER_TASK_MESSAGE, TASK_TYPE_PLANNER);
+      console.log('[jobs] Planner task created for immediate execution');
+    } else {
+      console.log('[jobs] Planner task already exists within last 24 hours');
+    }
+  } catch (error) {
+    console.error('[jobs] Error initializing planner task:', error);
+  }
+}
+
 function startPolling() {
-  // Start the first check
-  checkTasks();
+  // Initialize planner task before starting polling
+  initializePlannerTask().then(() => {
+    // Start the first check
+    checkTasks();
+  }).catch(error => {
+    console.error('[jobs] Failed to initialize planner task:', error);
+    // Start polling anyway
+    checkTasks();
+  });
 
   // Graceful shutdown
   const stop = () => {

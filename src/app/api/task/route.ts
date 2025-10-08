@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateId } from "ai";
 import { mastra } from "@/mastra";
-import { getTask, finishTask, addTask } from "@/lib/server/task-store";
-import { USER_ID } from "@/lib/const";
+import { getTask, finishTask, addTask, getNextMidnightTimestamp } from "@/lib/server/task-store";
+import { USER_ID, TASK_TYPE_PLANNER, PLANNER_TASK_MESSAGE } from "@/lib/const";
 import { RuntimeContext } from "@mastra/core/runtime-context";
 import { run2PC } from "@/mastra/tool2pc";
 
@@ -38,7 +38,9 @@ export async function POST(req: NextRequest) {
     const threadId = generateId();
 
     const runtimeContext = new RuntimeContext<{ mode: string }>();
-    runtimeContext.set("mode", "task");
+    // Set mode based on task type
+    const mode = task.type === TASK_TYPE_PLANNER ? TASK_TYPE_PLANNER : 'task';
+    runtimeContext.set("mode", mode);
 
     try {
       // Use task.task as input message to the assistantAgent
@@ -66,6 +68,13 @@ export async function POST(req: NextRequest) {
 
       await finishTask(userId, id, threadId, responseText, "");
 
+      // If this was a successful planner task, schedule the next one for midnight
+      if (task.type === TASK_TYPE_PLANNER) {
+        const nextMidnightTimestamp = getNextMidnightTimestamp();
+        await addTask(userId, nextMidnightTimestamp, PLANNER_TASK_MESSAGE, TASK_TYPE_PLANNER);
+        console.log(`[task] Scheduled next planner task for midnight: ${new Date(nextMidnightTimestamp * 1000).toISOString()}`);
+      }
+
       return NextResponse.json({
         success: true,
         status: responseText,
@@ -81,11 +90,12 @@ export async function POST(req: NextRequest) {
       // Mark task as finished with error
       await finishTask(userId, id, threadId, "error", errorMessage);
 
-      // Re-schedule the same task in 1 minute from now (outside transaction)
-      const retryTimestamp = Math.floor(Date.now() / 1000) + 60; // Current time + 60 seconds
-      await addTask(userId, retryTimestamp, task.task);
+      // Re-schedule the same task with different retry intervals based on type
+      const retryDelaySeconds = task.type === TASK_TYPE_PLANNER ? 600 : 60; // 10 minutes for planner, 1 minute for others
+      const retryTimestamp = Math.floor(Date.now() / 1000) + retryDelaySeconds;
+      await addTask(userId, retryTimestamp, task.task, task.type);
       console.log(
-        `Re-scheduled task for user ${userId} at timestamp ${retryTimestamp}`
+        `Re-scheduled ${task.type || 'regular'} task for user ${userId} at timestamp ${retryTimestamp} (retry in ${retryDelaySeconds} seconds)`
       );
 
       return NextResponse.json(
