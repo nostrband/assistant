@@ -8,22 +8,27 @@ import { Processor } from "@mastra/core/processors";
 export class TimestampingProcessor implements Processor {
   readonly name = "timestamp-user-message";
 
-  async processInput({
-    messages,
-  }: {
-    messages: MastraMessageV2[];
-  }) {
+  async processInput({ messages }: { messages: MastraMessageV2[] }) {
     const msg = messages[messages.length - 1];
     // console.log("input msg", JSON.stringify(msg));
-    const timestamp = `<current-time utc="${new Date().toISOString()}" />`;
-    if (msg.content.content) {
+    const now = new Date();
+    const timestamp = `
+<current-time 
+  utc="${now.toISOString()}"
+  local="${now.toString()}"
+/>
+`;
+    if (msg.content.content && typeof msg.content.content === "string") {
       msg.content.content += `\n${timestamp}`;
-    } else {
+    }
+
+    if (msg.content.parts.length > 0) {
       msg.content.parts.push({
         type: "text",
         text: timestamp,
       });
     }
+
     // console.log("timestamped msg", JSON.stringify(msg));
     return messages;
   }

@@ -2,7 +2,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { USER_ID } from "@/lib/const";
 import { addTask } from "@/lib/server/task-store";
-import { setTool2PC } from "../tool2pc";
+import { generateId } from "ai";
 
 export const addTaskTool = createTool({
   id: "add-task",
@@ -17,7 +17,7 @@ NOTE: Always check current time before adding a task, do not rely on timestamps 
     datetime: z
       .string()
       .describe(
-        "Date and time when the task should be executed (ISO 8601 format, e.g., '2025-10-06T14:30:00Z' or '2025-10-06 14:30')"
+        "Date and time when the task should be executed (e.g., '2025-10-06T14:30:00Z' or '2025-10-06 14:30')"
       ),
     task: z
       .string()
@@ -25,7 +25,7 @@ NOTE: Always check current time before adding a task, do not rely on timestamps 
         "Description of the task, will be passed back to you (the assistant)."
       ),
   }),
-  execute: async ({ context, runtimeContext }) => {
+  execute: async ({ context }) => {
     const { datetime, task } = context;
 
     try {
@@ -35,26 +35,14 @@ NOTE: Always check current time before adding a task, do not rely on timestamps 
       // Validate the date
       if (isNaN(date.getTime()))
         throw new Error(
-          "Invalid datetime format. Please use ISO 8601 format (e.g., '2025-10-06T14:30:00Z' or '2025-10-06 14:30')"
+          "Invalid datetime format. Please provide valid date (e.g., '2025-10-06T14:30:00Z' or '2025-10-06 14:30')"
         );
 
+      const id = generateId();
       const timestamp = Math.floor(date.getTime() / 1000); // Convert to Unix timestamp
 
-      // Set 2-phase-commit protocol to apply or revert these changes
-      setTool2PC({
-        runtimeContext,
-        tryCommit: async () => {
-          console.log("try commit add task");
-        },
-        rollback: async () => {
-          console.log("rollback add task");
-        },
-        commit: async () => {
-          console.log("commit add task");
-          // addTask always succeeds, so no need to tryCommit
-          await addTask(USER_ID, timestamp, task);
-        },
-      });
+      // Add task directly to the database
+      await addTask(id, USER_ID, timestamp, task);
 
       return {
         success: true,

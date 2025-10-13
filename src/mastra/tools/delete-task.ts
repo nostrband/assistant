@@ -1,8 +1,7 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { USER_ID } from "@/lib/const";
-import { deleteTask, getTask, undeleteTask } from "@/lib/server/task-store";
-import { setTool2PC } from "../tool2pc";
+import { deleteTask, getTask } from "@/lib/server/task-store";
 
 export const deleteTaskTool = createTool({
   id: "delete-task",
@@ -11,28 +10,21 @@ export const deleteTaskTool = createTool({
   inputSchema: z.object({
     id: z.string().describe("The ID of the task to delete"),
   }),
-  execute: async ({ context, runtimeContext }) => {
+  execute: async ({ context }) => {
     const { id } = context;
 
     try {
-      // Check that it exists first
-      await getTask(USER_ID, id);
+      // Check if task exists in database
+      const task = await getTask(USER_ID, id);
+      if (!task) {
+        return {
+          success: false,
+          error: "Task not found",
+        };
+      }
 
-      // Set 2-phase-commit protocol to apply or revert these changes
-      setTool2PC({
-        runtimeContext,
-        tryCommit: async () => {
-          console.log("try commit delete task");
-          await deleteTask(USER_ID, id);
-        },
-        rollback: async () => {
-          console.log("rollback delete task");
-          await undeleteTask(USER_ID, id);
-        },
-        commit: async () => {
-          console.log("commit delete task");
-        },
-      });
+      // Delete the task directly from the database
+      await deleteTask(USER_ID, id);
 
       return {
         success: true,
@@ -40,7 +32,7 @@ export const deleteTaskTool = createTool({
         deleted_task_id: id,
       };
     } catch (error) {
-      console.error("Error setting task:", error);
+      console.error("Error deleting task:", error);
       return {
         success: false,
         error:

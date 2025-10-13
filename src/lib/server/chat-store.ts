@@ -24,6 +24,9 @@ export async function loadChat(
     const result = await memory.query({
       threadId: id,
       resourceId: userId,
+      threadConfig: {
+        lastMessages: 100
+      }
     });
 
     const messages = convertMessages(result?.uiMessages || []).to("AIV5.UI") as MyUIMessage[];

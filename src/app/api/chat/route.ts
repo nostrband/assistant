@@ -8,7 +8,6 @@ import { CoreMessage } from "@mastra/core";
 import { assistantMemory } from "@/mastra/memory";
 import { RuntimeContext } from "@mastra/core/runtime-context";
 import { publishChatMessage } from "@/lib/server/events";
-import { run2PC } from "@/mastra/tool2pc";
 import { addCreatedAt } from "@/lib/utils";
 
 const assistantAgent = mastra.getAgent("assistantAgent");
@@ -113,9 +112,6 @@ export async function POST(req: NextRequest) {
         originalMessages,
         onFinish: async ({ messages }) => {
           try {
-            // If all ok - try to apply changes made by tools
-            await run2PC(runtimeContext);
-
             // Publish agent's messages event
             await publishChatMessage({
               chatId: id,

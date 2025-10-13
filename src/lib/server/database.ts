@@ -46,6 +46,16 @@ async function initializeDatabase() {
       ts TEXT NOT NULL,
       data TEXT NOT NULL,
       user_id TEXT NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS notes (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      tags TEXT NOT NULL,
+      priority TEXT DEFAULT 'low' CHECK (priority IN ('low', 'medium', 'high')),
+      created DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     )`
   ], "write");
 
@@ -90,7 +100,11 @@ async function initializeDatabase() {
       `CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)`,
       `CREATE INDEX IF NOT EXISTS idx_tasks_user_status_timestamp ON tasks(user_id, status, timestamp)`,
       `CREATE INDEX IF NOT EXISTS idx_events_type_id ON events(type, id)`,
-      `CREATE INDEX IF NOT EXISTS idx_events_user_id_id ON events(user_id, id)`
+      `CREATE INDEX IF NOT EXISTS idx_events_user_id_id ON events(user_id, id)`,
+      `CREATE INDEX IF NOT EXISTS idx_notes_user_id ON notes(user_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated)`,
+      `CREATE INDEX IF NOT EXISTS idx_notes_priority ON notes(priority)`,
+      `CREATE INDEX IF NOT EXISTS idx_notes_user_updated ON notes(user_id, updated)`
     ], "write");
   } catch {
     // Indexes might already exist

@@ -1,5 +1,4 @@
 // import "server-only";
-import { generateId } from "ai";
 import getDatabase from "./database";
 import { TASK_TYPE_PLANNER } from "../const";
 
@@ -16,19 +15,20 @@ export interface Task {
 
 // Set a new task - fails if task for this timestamp already exists for this user
 export async function addTask(
+  id: string,
   user_id: string,
   timestamp: number,
   task: string,
-  type: string = ''
+  type: string = '',
+  thread_id: string = ''
 ): Promise<string> {
   const db = getDatabase();
-  const id = generateId();
 
   // Insert new task
   await db.execute({
     sql: `INSERT INTO tasks (id, user_id, timestamp, task, status, thread_id, error, type)
-          VALUES (?, ?, ?, ?, '', '', '', ?)`,
-    args: [id, user_id, timestamp, task, type],
+          VALUES (?, ?, ?, ?, '', ?, '', ?)`,
+    args: [id, user_id, timestamp, task, thread_id, type],
   });
 
   return id;

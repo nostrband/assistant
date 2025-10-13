@@ -1,7 +1,9 @@
 // scripts/job-runner.ts
 import 'dotenv/config';
 import { getNextTask, hasPlannerTaskInLast24Hours, addTask } from '../src/lib/server/task-store';
-import { USER_ID, TASK_TYPE_PLANNER, PLANNER_TASK_MESSAGE } from '../src/lib/const';
+import { USER_ID, TASK_TYPE_PLANNER } from '../src/lib/const';
+import { generateId } from 'ai';
+import { createPlannerTaskPrompt } from '@/lib/utils';
 
 let isShuttingDown = false;
 let timeoutId: NodeJS.Timeout | null = null;
@@ -60,7 +62,7 @@ async function initializePlannerTask() {
     if (!hasPlannerTask) {
       console.log('[jobs] No planner task found in last 24 hours, creating one now');
       const currentTimestamp = Math.floor(Date.now() / 1000);
-      await addTask(USER_ID, currentTimestamp, PLANNER_TASK_MESSAGE, TASK_TYPE_PLANNER);
+      await addTask(generateId(), USER_ID, currentTimestamp, createPlannerTaskPrompt(), TASK_TYPE_PLANNER);
       console.log('[jobs] Planner task created for immediate execution');
     } else {
       console.log('[jobs] Planner task already exists within last 24 hours');

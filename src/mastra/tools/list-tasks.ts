@@ -5,10 +5,11 @@ import { listTasks } from "@/lib/server/task-store";
 export const listTasksTool = createTool({
   id: "list-tasks",
   description: `List up to 100 most recent tasks. By default, returns only active tasks (status === '').
-Use this tool to see what tasks are scheduled or have been completed.`,
+Use this tool to see what tasks are scheduled or have been completed. Tasks are sorted by time DESC (furthest-first).
+Note that scheduled time is returned in LOCAL timezone, which might differ from UTC time you used for addTask - that's ok.`,
   inputSchema: z.object({
     include_finished: z.boolean().nullable().describe("If true, include all tasks regardless of status. If false or omitted, only return active tasks (status === '')"),
-    until: z.string().nullable().describe("Maximum datetime of tasks to return (ISO 8601 format, e.g., '2025-10-06T14:30:00Z'). Useful for paginating back in time through tasks"),
+    until: z.string().nullable().describe("Maximum datetime of tasks to return (e.g., '2025-10-06T14:30:00Z'). Useful for paginating back in time through tasks"),
   }),
   execute: async ({ context }) => {
     const { include_finished = false, until } = context;
@@ -31,19 +32,24 @@ Use this tool to see what tasks are scheduled or have been completed.`,
       
       const tasks = await listTasks(!!include_finished, untilTimestamp);
       
+      // Format tasks for response
+      const formattedTasks = tasks.map(task => ({
+        id: task.id,
+        user_id: task.user_id,
+        timestamp: task.timestamp,
+        datetime: new Date(task.timestamp * 1000).toString(),
+        task: task.task,
+        status: task.status,
+        thread_id: task.thread_id,
+        error: task.error,
+      }));
+      
+      console.log("list tasks", formattedTasks);
+      
       return {
         success: true,
-        tasks: tasks.map(task => ({
-          id: task.id,
-          user_id: task.user_id,
-          timestamp: task.timestamp,
-          datetime: new Date(task.timestamp * 1000).toISOString(), // Convert Unix timestamp to ISO string for readability
-          task: task.task,
-          status: task.status,
-          thread_id: task.thread_id,
-          error: task.error,
-        })),
-        total_count: tasks.length,
+        tasks: formattedTasks,
+        total_count: formattedTasks.length,
         filters: {
           include_finished,
           until,

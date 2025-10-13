@@ -5,9 +5,18 @@ import { listChatsTool } from "../tools/list-chats";
 import { addTaskTool } from "../tools/add-task";
 import { listTasksTool } from "../tools/list-tasks";
 import { deleteTaskTool } from "../tools/delete-task";
+import { createNoteTool } from "../tools/create-note";
+import { updateNoteTool } from "../tools/update-note";
+import { deleteNoteTool } from "../tools/delete-note";
+import { getNoteTool } from "../tools/get-note";
+import { searchNotesTool } from "../tools/search-notes";
+import { listNotesTool } from "../tools/list-notes";
+import { getWeatherTool } from "../tools/get-weather";
+import { webSearchTool } from "../tools/web-search";
 import { assistantMemory } from "../memory";
 import { UnicodeNormalizer } from "@mastra/core/processors";
 import { TimestampingProcessor } from "../processor";
+import { RuntimeContext } from "@mastra/core/runtime-context";
 
 // Configure OpenRouter provider
 const openrouter = createOpenRouter({
@@ -38,29 +47,39 @@ export const assistantAgent = new Agent({
     addTaskTool,
     listTasksTool,
     deleteTaskTool,
+    createNoteTool,
+    updateNoteTool,
+    deleteNoteTool,
+    getNoteTool,
+    searchNotesTool,
+    listNotesTool,
+    getWeatherTool,
+    webSearchTool,
     // getCurrentTimeTool,
   },
   // FIXME does it interfere with tool call results?
   // outputProcessors: [new CleanFinalMessageProcessor()],
-  inputProcessors: [
-    new UnicodeNormalizer({
-      stripControlChars: true,
-      collapseWhitespace: true,
-      trim: true,
-    }),
-    new TimestampingProcessor()
-  ],
+  inputProcessors: ({ runtimeContext }: { runtimeContext: RuntimeContext }) => {
+    return [
+      new UnicodeNormalizer({
+        stripControlChars: true,
+        collapseWhitespace: true,
+        trim: true,
+      }),
+      new TimestampingProcessor(),
+    ];
+  },
   instructions: async ({ runtimeContext }) => {
     const mode = runtimeContext.get("mode");
     return `You are a proactive personal assistant for the user: 
-${mode === "user"
+${
+  mode === "user"
     ? `- You are talking to the user and can receive new input from them or ask questions.
 - Your core job is to listen, make notes, confirm, and act later, unless explicitly asked for a comprehensive reply to a query.
-- Save your user's time, do not ask questions if you can infer the answer, do not print big replies unless asked.
-- When getting new input from user related to noted reminders, check the scheduled task list and make necessary updates.
-- Keep your messages short, end with ONE clear next step suggestion (not a command, you're not the boss).  
+- Save your user's time, keep your messages short, do not ask questions if up-to-date answer is already in your memory.
+- Keep your messages short, end with ONE clear next step suggestion (not a command - suggestion), or just confirm you got the input if no good next step comes to mind.  
 - Explain reasoning only if asked.  
-- State any assumptions and ask for confirmation.
+- State any assumptions and ask clarifying questions if input is unclear.
 - When printing time to the user always convert to their local timezone.
 `
     : mode === "task"
@@ -76,7 +95,12 @@ ${mode === "user"
 - Use the update memory tool to store the most important context that must be always available.
 - Use sendMessage tool if need to send a message to user.
 - Use addTask/listTask/deleteTask tools to schedule tasks for yourself to be done later.
-- You can only call 6 tools in a row, if more needed - split the task into smaller batches and schedule them to be run immediately.
+- Use createNote/updateNote/deleteNote/getNote/searchNotes/listNotes tools to manage project-specific notes with tags for organization.
+${
+  mode === "user"
+    ? `- You can only call 6 tools in a row, if more needed - split the task into smaller batches and schedule them to be run immediately using add-task tool.`
+    : ""
+}
 `;
     //- Use the memory block to keep notes, deadlines, tags, and links.
   },
