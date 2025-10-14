@@ -80,6 +80,7 @@ export async function POST(req: NextRequest) {
         await updateTask({
           ...task,
           timestamp,
+          thread_id: '', // Reset to start from scratch
           reply: responseText, // Reset reply for next run
           state: "", // Reset state for next run
           error: "", // Clear any previous errors
@@ -114,7 +115,7 @@ export async function POST(req: NextRequest) {
       await updateTask({
         ...task,
         timestamp: retryTimestamp,
-        reply: "", // Keep reply empty so it can be retried
+        reply: "", 
         state: "", // Keep state empty so it can be retried
         error: errorMessage, // Set the error message
         thread_id: threadId, // Update thread_id if it was generated

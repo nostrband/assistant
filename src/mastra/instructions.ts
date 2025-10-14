@@ -48,7 +48,7 @@ function getWorkflow(mode: AGENT_MODE) {
 - After required updates are performed, prepare a proper reply that user would expect on their input.
 - Keep your replies short, you aren't here to educate (unless explicitly asked for a comprehensive reply).
 - Try to end with ONE clear next step suggestion (must be relevant and pretty obvious next step), if no good suggestion - just confirm.
-- For complex long-running tasks create a plan, schedule a background task that will report back later, and tell user you'll get back soon.
+- For complex queries that might take many tool calls, see instructions below.
 `;
     default:
       return `
@@ -56,6 +56,19 @@ function getWorkflow(mode: AGENT_MODE) {
 - Reply with a clear description of what was done, for audit logs.
 `;
   }
+}
+
+function getLongTaskInstructions(mode: AGENT_MODE) {
+  if (mode !== "user") return "";
+  return `
+Long-running tasks:
+- Create a step-by-step plan for yourself, it will be executed in the background without tool call limits.
+- You MUST add the last step to the plan: instructions for yourself to use sendMessageTool to notify the user about task results.
+- Use addTaskTool to create a task with your plan.
+- Set task datetime to current time to be executed immediately.
+- Confirm to user that you're working on their query and will report back when it's ready.
+- Be BRIEF in your reply, prefer something like "working on it" versus "I created a background task with plan ... shceduled for ... and will reply to main chat".
+`;
 }
 
 export function getInstructions(mode: AGENT_MODE) {
@@ -71,6 +84,8 @@ ${getLimitations(mode).trim()}
 
 Workflow:
 ${getWorkflow(mode).trim()}
+
+${getLongTaskInstructions(mode)}
 
 `;
 

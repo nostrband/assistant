@@ -13,14 +13,17 @@ You can combine multiple search criteria - all must match for a note to be inclu
     keywords: z
       .array(z.string())
       .nullable()
+      .optional()
       .describe("Array of keywords to search for in title and content (optional, case-insensitive)"),
     tags: z
       .array(z.string())
       .nullable()
+      .optional()
       .describe("Array of tags to filter by (optional, partial matches allowed, case-insensitive)"),
     regexp: z
       .string()
       .nullable()
+      .optional()
       .describe("Regular expression pattern to search in title and content (optional, case-insensitive), will use new RegExp(regexp, 'i') in JS to match"),
   }),
   execute: async ({ context }) => {

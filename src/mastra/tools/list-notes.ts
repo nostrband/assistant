@@ -19,6 +19,7 @@ Use this to browse through notes or get an overview of what notes exist.`,
       .min(1)
       .max(100)
       .nullable()
+      .optional()
       .default(null)
       .describe("Maximum number of notes to return (1-100, optional, default: 20)"),
     offset: z
@@ -26,6 +27,7 @@ Use this to browse through notes or get an overview of what notes exist.`,
       .int()
       .min(0)
       .nullable()
+      .optional()
       .default(null)
       .describe("Number of notes to skip for pagination (optional, default: 0)"),
   }),
