@@ -25,8 +25,8 @@ export const assistantMemory = new Memory({
       "updateWorkingMemory"
     ]}),
 
-    // Ensure the total tokens from memory don't exceed ~100k
-    new TokenLimiter(100000),
+    // Ensure the total tokens from memory don't exceed ~20k
+    new TokenLimiter(20000),
   ],
   options: {
     lastMessages: 30,

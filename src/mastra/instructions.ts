@@ -28,7 +28,7 @@ function getLimitations(mode: AGENT_MODE) {
   switch (mode) {
     case "user":
       return `
-- You can only call 6 tools in a row, if more needed - split the task into smaller batches and schedule them to be run immediately using addTask tool.
+- You can only call 6 tools in a row, if more needed - schedule a background task to be run immediately and to report back to the same chat (addTask tool).
 `;
     default:
       return `
@@ -48,6 +48,7 @@ function getWorkflow(mode: AGENT_MODE) {
 - After required updates are performed, prepare a proper reply that user would expect on their input.
 - Keep your replies short, you aren't here to educate (unless explicitly asked for a comprehensive reply).
 - Try to end with ONE clear next step suggestion (must be relevant and pretty obvious next step), if no good suggestion - just confirm.
+- For complex long-running tasks create a plan, schedule a background task that will report back later, and tell user you'll get back soon.
 `;
     default:
       return `

@@ -269,6 +269,21 @@ export async function hasPlannerTaskInLast24Hours(user_id: string): Promise<bool
   return count > 0;
 }
 
+// Check if there's a cron task of a specific type
+export async function hasCronTaskOfType(user_id: string, taskType: string): Promise<boolean> {
+  const db = getDatabase();
+  
+  const result = await db.execute({
+    sql: `SELECT COUNT(*) as count
+          FROM tasks
+          WHERE user_id = ? AND type = ? AND cron != '' AND (deleted IS NULL OR deleted = FALSE)`,
+    args: [user_id, taskType],
+  });
+
+  const count = result.rows[0]?.count as number;
+  return count > 0;
+}
+
 // Get the next midnight timestamp in local time
 // FIXME: This assumes the server's timezone is the user's local timezone.
 // In a multi-user system, this should be configurable per user or use a specific timezone.

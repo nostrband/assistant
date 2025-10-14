@@ -1,9 +1,10 @@
 // scripts/job-runner.ts
 import 'dotenv/config';
-import { getNextTask, hasPlannerTaskInLast24Hours, addTask } from '../src/lib/server/task-store';
-import { USER_ID, TASK_TYPE_PLANNER } from '../src/lib/const';
+import { getNextTask, addTask, hasCronTaskOfType } from '../src/lib/server/task-store';
+import { USER_ID, ROUTINE_TASKS } from '../src/lib/const';
 import { generateId } from 'ai';
 import { createPlannerTaskPrompt } from '@/lib/utils';
+import { Cron } from 'croner';
 
 let isShuttingDown = false;
 let timeoutId: NodeJS.Timeout | null = null;
@@ -54,31 +55,70 @@ async function checkTasks() {
   }
 }
 
-async function initializePlannerTask() {
+async function initializeRoutineTasks() {
   try {
-    // Check if there's a planner task within the last 24 hours
-    const hasPlannerTask = await hasPlannerTaskInLast24Hours(USER_ID);
+    console.log('[jobs] Checking routine tasks...');
     
-    if (!hasPlannerTask) {
-      console.log('[jobs] No planner task found in last 24 hours, creating one now');
-      const currentTimestamp = Math.floor(Date.now() / 1000);
-      await addTask(generateId(), USER_ID, currentTimestamp, createPlannerTaskPrompt(), TASK_TYPE_PLANNER);
-      console.log('[jobs] Planner task created for immediate execution');
-    } else {
-      console.log('[jobs] Planner task already exists within last 24 hours');
+    for (const [taskType, cronSchedule] of Object.entries(ROUTINE_TASKS)) {
+      console.log(`[jobs] Checking for ${taskType} task with cron schedule: ${cronSchedule}`);
+      
+      try {
+        // Check if a task with this type and non-empty cron already exists
+        const existingTask = await hasCronTaskOfType(USER_ID, taskType);
+        
+        if (!existingTask) {
+          console.log(`[jobs] No ${taskType} cron task found, creating one`);
+          
+          // Calculate next run time from cron schedule
+          const job = new Cron(cronSchedule);
+          const nextRun = job.nextRun();
+          if (!nextRun) {
+            console.error(`[jobs] Invalid cron schedule for ${taskType}: ${cronSchedule}`);
+            continue;
+          }
+          
+          const timestamp = Math.floor(nextRun.getTime() / 1000);
+          
+          // Create task content based on type
+          let taskContent = '';
+          let title = '';
+          if (taskType === 'planner') {
+            taskContent = createPlannerTaskPrompt();
+            title = 'Daily Planning';
+          }
+          
+          await addTask(
+            generateId(),
+            USER_ID,
+            timestamp,
+            taskContent,
+            taskType,
+            '', // thread_id
+            title,
+            cronSchedule
+          );
+          
+          console.log(`[jobs] Created ${taskType} cron task for next run at: ${new Date(timestamp * 1000).toISOString()}`);
+        } else {
+          console.log(`[jobs] ${taskType} cron task already exists`);
+        }
+      } catch (error) {
+        console.error(`[jobs] Error processing ${taskType} routine task:`, error);
+      }
     }
   } catch (error) {
-    console.error('[jobs] Error initializing planner task:', error);
+    console.error('[jobs] Error initializing routine tasks:', error);
   }
 }
 
+
 function startPolling() {
-  // Initialize planner task before starting polling
-  initializePlannerTask().then(() => {
+  // Initialize routine tasks before starting polling
+  initializeRoutineTasks().then(() => {
     // Start the first check
     checkTasks();
   }).catch(error => {
-    console.error('[jobs] Failed to initialize planner task:', error);
+    console.error('[jobs] Failed to initialize routine tasks:', error);
     // Start polling anyway
     checkTasks();
   });

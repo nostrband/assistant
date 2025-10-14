@@ -4,13 +4,10 @@ import { mastra } from "@/mastra";
 import {
   getTask,
   finishTask,
-  addTask,
   updateTask,
-  getNextMidnightTimestamp,
 } from "@/lib/server/task-store";
-import { USER_ID, TASK_TYPE_PLANNER } from "@/lib/const";
+import { USER_ID } from "@/lib/const";
 import { RuntimeContext } from "@mastra/core/runtime-context";
-import { createPlannerTaskPrompt } from "@/lib/utils";
 import { AGENT_MODE } from "@/mastra/instructions";
 import { Cron } from "croner";
 
@@ -34,10 +31,10 @@ export async function POST(req: NextRequest) {
       return new Response("Task not found", { status: 404 });
     }
 
-    if (task.reply !== "") {
+    if (task.state !== "") {
       console.error(
         "Task API error:",
-        `Task already processed with reply: ${task.reply}`
+        `Task already processed with state: ${task.state}`
       );
       return new Response("Task already processed", { status: 400 });
     }
@@ -48,7 +45,7 @@ export async function POST(req: NextRequest) {
     const runtimeContext = new RuntimeContext<{ mode: string }>();
     // Set mode based on task type
     const mode: AGENT_MODE =
-      task.type === TASK_TYPE_PLANNER ? "planner" : "task";
+      task.type === "planner" ? "planner" : "task";
     runtimeContext.set("mode", mode);
 
     try {
@@ -72,23 +69,6 @@ export async function POST(req: NextRequest) {
 
       // Take response.text and write to task's 'reply' field
       const responseText = result.text || "Task completed";
-
-      // If this was a successful planner task, schedule the next one for midnight
-      if (task.type === TASK_TYPE_PLANNER) {
-        const nextMidnightTimestamp = getNextMidnightTimestamp();
-        await addTask(
-          generateId(),
-          userId,
-          nextMidnightTimestamp,
-          createPlannerTaskPrompt(),
-          TASK_TYPE_PLANNER
-        );
-        console.log(
-          `[task] Scheduled next planner task for midnight: ${new Date(
-            nextMidnightTimestamp * 1000
-          ).toISOString()}`
-        );
-      }
 
       if (task.cron) {
         const job = new Cron(task.cron);
@@ -127,7 +107,7 @@ export async function POST(req: NextRequest) {
         error instanceof Error ? error.message : "Unknown error occurred";
 
       // Re-schedule the same task with different retry intervals based on type
-      const retryDelaySeconds = task.type === TASK_TYPE_PLANNER ? 600 : 60; // 10 minutes for planner, 1 minute for others
+      const retryDelaySeconds = !task.type ? 60 : 600; // 1 minute for user-created tasks, 10 minute for others
       const retryTimestamp = Math.floor(Date.now() / 1000) + retryDelaySeconds;
 
       // Update the current task instead of finishing and adding a new one
