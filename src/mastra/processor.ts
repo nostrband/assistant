@@ -2,8 +2,51 @@
 // Auto-detects whether to emit immediately or wait for `<|channel|>final<|message|>`.
 // Strips control markers if they appear, emits only user-visible text.
 
+import { listNotes } from "@/lib/server/note-store";
+import { listTasks } from "@/lib/server/task-store";
 import { ChunkType, MastraMessageV2 } from "@mastra/core";
 import { Processor } from "@mastra/core/processors";
+import { generateId } from "ai";
+
+export class ContextInjectingProcessor implements Processor {
+  readonly name = "content-injection";
+
+  async processInput({ messages }: { messages: MastraMessageV2[] }) {
+    const msg = messages[messages.length - 1];
+    if (msg.role !== "user") throw new Error("User message expected");
+
+    const notes = await listNotes(msg.resourceId!)
+    const tasks = await listTasks();
+    const text = `
+Stored notes:
+${notes.map(n => `- ${n.title}`).join('\n')}
+
+Active tasks:
+${tasks.map(t => `- ${new Date(t.timestamp * 1000)}: ${t.task}`).join('\n')}
+`;
+
+    // Prepend state
+    messages.unshift({
+      id: generateId(),
+      createdAt: new Date(),
+      role: "assistant",
+      threadId: msg.threadId,
+      resourceId: msg.resourceId,
+      content: {
+        format: 2,
+        parts: [
+          {
+            type: "text",
+            text,
+          },
+        ],
+      },
+    });
+
+    console.log("context injected", messages);
+    return messages;
+  }
+}
 
 export class TimestampingProcessor implements Processor {
   readonly name = "timestamp-user-message";
@@ -29,7 +72,7 @@ export class TimestampingProcessor implements Processor {
       });
     }
 
-    // console.log("timestamped msg", JSON.stringify(msg));
+    // console.log("timestamped msgs", JSON.stringify(messages));
     return messages;
   }
 }

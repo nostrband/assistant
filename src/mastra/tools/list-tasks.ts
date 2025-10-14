@@ -8,8 +8,8 @@ export const listTasksTool = createTool({
 Use this tool to see what tasks are scheduled or have been completed. Tasks are sorted by time DESC (furthest-first).
 Note that scheduled time is returned in LOCAL timezone, which might differ from UTC time you used for addTask - that's ok.`,
   inputSchema: z.object({
-    include_finished: z.boolean().nullable().describe("If true, include all tasks regardless of status. If false or omitted, only return active tasks (status === '')"),
-    until: z.string().nullable().describe("Maximum datetime of tasks to return (e.g., '2025-10-06T14:30:00Z'). Useful for paginating back in time through tasks"),
+    include_finished: z.boolean().nullable().optional().describe("If true, include all tasks regardless of status. If false or omitted, only return active tasks (status === '')"),
+    until: z.string().nullable().optional().describe("Maximum datetime of tasks to return (e.g., '2025-10-06T14:30:00Z'). Useful for paginating back in time through tasks"),
   }),
   execute: async ({ context }) => {
     const { include_finished = false, until } = context;

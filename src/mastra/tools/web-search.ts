@@ -39,6 +39,11 @@ export const webSearchTool = createTool({
       .string()
       .optional()
       .describe("End date for content published date filter (ISO format: YYYY-MM-DD)"),
+    live: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe("If true, ensures results are 100% up to date and not cached"),
   }),
   execute: async ({ context }) => {
     const {
@@ -49,6 +54,7 @@ export const webSearchTool = createTool({
       excludeDomains,
       startPublishedDate,
       endPublishedDate,
+      live = false,
     } = context;
 
     try {
@@ -86,6 +92,10 @@ export const webSearchTool = createTool({
         searchOptions.endPublishedDate = endPublishedDate;
       }
 
+      if (live) {
+        searchOptions.livecrawl = "always";
+      }
+
       console.log("Performing web search with options:", { query, ...searchOptions });
 
       const result = await exa.searchAndContents(query, searchOptions);
@@ -115,6 +125,7 @@ export const webSearchTool = createTool({
           excludeDomains,
           startPublishedDate,
           endPublishedDate,
+          live,
         },
       };
 

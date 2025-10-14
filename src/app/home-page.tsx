@@ -41,7 +41,7 @@ export default async function HomePage() {
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-4">Personal AI Assistant</h1>
           <p className="text-gray-600 mb-6">Your AI assistant with memory capabilities</p>
-          <NewChatButton className="inline-block px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium">
+          <NewChatButton className="inline-block px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium" noChats={!chats.length}>
             Start New Chat
           </NewChatButton>
         </div>

@@ -14,27 +14,16 @@ import { listNotesTool } from "../tools/list-notes";
 import { getWeatherTool } from "../tools/get-weather";
 import { webSearchTool } from "../tools/web-search";
 import { assistantMemory } from "../memory";
-import { UnicodeNormalizer } from "@mastra/core/processors";
-import { TimestampingProcessor } from "../processor";
+import { InputProcessor, UnicodeNormalizer } from "@mastra/core/processors";
+import { ContextInjectingProcessor, TimestampingProcessor } from "../processor";
 import { RuntimeContext } from "@mastra/core/runtime-context";
+import { AGENT_MODE, getInstructions } from "../instructions";
 
 // Configure OpenRouter provider
 const openrouter = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY,
   baseURL: process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1",
 });
-
-// class InputLogger implements Processor {
-//   readonly name = 'input-logger';
-
-//   processInput({ messages, abort }: {
-//     messages: MastraMessageV2[];
-//     abort: (reason?: string) => never
-//   }): MastraMessageV2[] {
-//     console.log("input", JSON.stringify(messages, null, 2));
-//     return messages;
-//   }
-// }
 
 // Create the AI assistant agent with memory
 export const assistantAgent = new Agent({
@@ -55,53 +44,95 @@ export const assistantAgent = new Agent({
     listNotesTool,
     getWeatherTool,
     webSearchTool,
-    // getCurrentTimeTool,
   },
   // FIXME does it interfere with tool call results?
   // outputProcessors: [new CleanFinalMessageProcessor()],
   inputProcessors: ({ runtimeContext }: { runtimeContext: RuntimeContext }) => {
-    return [
+    const procs: InputProcessor[] = [
       new UnicodeNormalizer({
         stripControlChars: true,
         collapseWhitespace: true,
         trim: true,
       }),
-      new TimestampingProcessor(),
     ];
+    procs.push(new TimestampingProcessor());
+
+    return procs;
   },
   instructions: async ({ runtimeContext }) => {
-    const mode = runtimeContext.get("mode");
-    return `You are a proactive personal assistant for the user: 
-${
-  mode === "user"
-    ? `- You are talking to the user and can receive new input from them or ask questions.
-- Your core job is to listen, make notes, confirm, and act later, unless explicitly asked for a comprehensive reply to a query.
-- Save your user's time, keep your messages short, do not ask questions if up-to-date answer is already in your memory.
-- Keep your messages short, end with ONE clear next step suggestion (not a command - suggestion), or just confirm you got the input if no good next step comes to mind.  
-- Explain reasoning only if asked.  
-- State any assumptions and ask clarifying questions if input is unclear.
-- When printing time to the user always convert to their local timezone.
-`
-    : mode === "task"
-    ? `- You are running a background task, user is not available and can't answer.
-- Execute the task and reply with a short summary for audit logs.`
-    : `- You are running a regular planning/cleanup job, user is not available and can't answer.
-- Revisit your notes and schedule, make necessary adjustments and clean-up your notes and task list, reply with a short summary for audit logs.`
-}
-- Proactively nudge user when a trigger (deadline, conflict, opportunity) is detected in the near term.  
-- To act proactively, use tools to schedule tasks for yourself (i.e. "send 'wake up' to user in 2 hours").
-- Never ask to confirm tool usage - all tools are always allowed.
-- Current time is always passed with user messages, use it to schedule tasks.
-- Use the update memory tool to store the most important context that must be always available.
-- Use sendMessage tool if need to send a message to user.
-- Use addTask/listTask/deleteTask tools to schedule tasks for yourself to be done later.
-- Use createNote/updateNote/deleteNote/getNote/searchNotes/listNotes tools to manage project-specific notes with tags for organization.
-${
-  mode === "user"
-    ? `- You can only call 6 tools in a row, if more needed - split the task into smaller batches and schedule them to be run immediately using add-task tool.`
-    : ""
-}
-`;
-    //- Use the memory block to keep notes, deadlines, tags, and links.
+    const mode = runtimeContext.get("mode") as AGENT_MODE;
+    return getInstructions(mode);
   },
 });
+
+// // Agents:
+// /**
+//  * Memory updater agent - tools to update memory, memory
+//  * Task updater agent - tools to update tasks, memory, active task list
+//  * Note updater agent - tools to update notes, memory, active notes
+//  * Reply builder agent - read-only tool calls, replies from other agents, unanswered messages, some more previous context
+//  */
+
+// export const memoryAgent = new Agent({
+//   name: "Personal Assistant's Memory Agent",
+//   model: openrouter(process.env.AGENT_MODEL || "openai/gpt-oss-120b"),
+//   memory: assistantMemory,
+//   tools: {
+//     // only updateWorkingMemory from memory
+//   },
+//   inputProcessors: [
+//     new UnicodeNormalizer({
+//       stripControlChars: true,
+//       collapseWhitespace: true,
+//       trim: true,
+//     }),
+//     new TimestampingProcessor(),
+//   ],
+//   instructions: async ({}) => {
+//     return `You are a part of proactive personal AI assistant for the user. Your job is to keep working memory about user updated with latest user input: 
+// - Working memory is used to keep the most commonly used, short facts and knowledge about user, and is provided for all agents within assistant.
+// - The assistant also stores Notes (less commonly used topical knowledge about user) and Tasks (specific jobs tracked and executed over time).
+// - You will see the list of Notes and Tasks that are already stored, if user input is better suited for Notes or Tasks - don't write to working memory.
+// - Current time is always passed with user messages, use it to reason about the dates and schedule of the user.
+// - Your job is to decide if working memory should be updated and call the updateWorkingMemoryTool in that case.
+// - If user input better fits to Notes or Tasks, reply with a comment - it will be passed to Notes/Tasks handling agents.
+// - If user input is ambiguous, reply with a message asking for clarification - it will be passed to ReplyBuilder agent. 
+// `;
+//   },
+// });
+
+
+// // Create the AI assistant agent with memory
+// export const notesAgent = new Agent({
+//   name: "Personal Assistant's Notes Agent",
+//   model: openrouter(process.env.AGENT_MODEL || "openai/gpt-oss-120b"),
+//   memory: assistantMemory,
+//   tools: {
+//     createNoteTool,
+//     updateNoteTool,
+//     deleteNoteTool,
+//     getNoteTool,
+//     searchNotesTool,
+//   },
+//   inputProcessors: ({ runtimeContext }: { runtimeContext: RuntimeContext }) => {
+//     return [
+//       new UnicodeNormalizer({
+//         stripControlChars: true,
+//         collapseWhitespace: true,
+//         trim: true,
+//       }),
+//       new TimestampingProcessor(),
+//     ];
+//   },
+//   instructions: async ({}) => {
+//     return `You are a part of proactive personal AI assistant for the user. Your job is to keep Notes about user updated with latest user input: 
+// - Notes are used to keep long, deep, topical, rarely accessed knowledge and facts about user. 
+// - The assistant also stores working Memory (most commonly used broad knowledge about user) and Tasks (specific jobs tracked and executed over time).
+// - You will see the contents of working Memory, if user input is already reflected there - don't update Notes.
+// - You will see Tasks that are already stored, if user input is better suited for Tasks - don't update Notes.
+// - Current time is always passed with user messages, use it to reason about the dates and schedule of the user.
+// - Your job is to decide if any Notes should be created/updated and call the corresponding tools in that case.
+// - If user input is ambiguous, reply with a message asking for clarification - it will be passed to ReplyBuilder agent. 
+// `;
+//   },
+// });

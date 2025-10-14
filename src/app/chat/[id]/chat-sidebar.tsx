@@ -123,7 +123,7 @@ export default function ChatSidebar({ initialChats, currentChatId }: ChatSidebar
       {/* Header */}
       <div className="p-4 border-b border-gray-200">
         <h2 className="text-lg font-semibold text-gray-800">Chats</h2>
-        <NewChatButton className="mt-2 block w-full text-center p-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors">
+        <NewChatButton noChats={!chats.length} className="mt-2 block w-full text-center p-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors">
           + New Chat
         </NewChatButton>
       </div>
@@ -165,7 +165,7 @@ export default function ChatSidebar({ initialChats, currentChatId }: ChatSidebar
                 <div className="flex justify-between items-start">
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-gray-800 truncate">
-                      {truncateMessage(chatItem.first_message)}
+                      {truncateMessage(chatItem.id === "main" ? "MAIN" : chatItem.first_message)}
                     </div>
                     <div className="text-xs text-gray-500 mt-1">
                       {formatTime(chatItem.updated_at)}
