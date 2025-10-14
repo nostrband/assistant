@@ -1,14 +1,15 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { listTasks } from "@/lib/server/task-store";
+import { USER_ID } from "@/lib/const";
 
 export const listTasksTool = createTool({
   id: "list-tasks",
-  description: `List up to 100 most recent tasks. By default, returns only active tasks (status === '').
+  description: `List up to 100 most recent tasks. By default, returns only active tasks (reply === '').
 Use this tool to see what tasks are scheduled or have been completed. Tasks are sorted by time DESC (furthest-first).
 Note that scheduled time is returned in LOCAL timezone, which might differ from UTC time you used for addTask - that's ok.`,
   inputSchema: z.object({
-    include_finished: z.boolean().nullable().optional().describe("If true, include all tasks regardless of status. If false or omitted, only return active tasks (status === '')"),
+    include_finished: z.boolean().nullable().optional().describe("If true, include all tasks regardless of reply. If false or omitted, only return active tasks (reply === '')"),
     until: z.string().nullable().optional().describe("Maximum datetime of tasks to return (e.g., '2025-10-06T14:30:00Z'). Useful for paginating back in time through tasks"),
   }),
   execute: async ({ context }) => {
@@ -30,16 +31,19 @@ Note that scheduled time is returned in LOCAL timezone, which might differ from 
         untilTimestamp = Math.floor(date.getTime() / 1000);
       }
       
-      const tasks = await listTasks(!!include_finished, untilTimestamp);
+      const tasks = await listTasks(USER_ID, !!include_finished, untilTimestamp);
       
       // Format tasks for response
       const formattedTasks = tasks.map(task => ({
         id: task.id,
         user_id: task.user_id,
+        title: task.title,
         timestamp: task.timestamp,
-        datetime: new Date(task.timestamp * 1000).toString(),
+        datetime: task.timestamp > 0 ? new Date(task.timestamp * 1000).toString() : '',
+        cron: task.cron,
         task: task.task,
-        status: task.status,
+        reply: task.reply,
+        state: task.state,
         thread_id: task.thread_id,
         error: task.error,
       }));

@@ -5,11 +5,14 @@ import {
   getTask,
   finishTask,
   addTask,
+  updateTask,
   getNextMidnightTimestamp,
 } from "@/lib/server/task-store";
 import { USER_ID, TASK_TYPE_PLANNER } from "@/lib/const";
 import { RuntimeContext } from "@mastra/core/runtime-context";
 import { createPlannerTaskPrompt } from "@/lib/utils";
+import { AGENT_MODE } from "@/mastra/instructions";
+import { Cron } from "croner";
 
 const assistantAgent = mastra.getAgent("assistantAgent");
 const userId = USER_ID; // FIXME from auth info
@@ -31,10 +34,10 @@ export async function POST(req: NextRequest) {
       return new Response("Task not found", { status: 404 });
     }
 
-    if (task.status !== "") {
+    if (task.reply !== "") {
       console.error(
         "Task API error:",
-        `Task already processed with status: ${task.status}`
+        `Task already processed with reply: ${task.reply}`
       );
       return new Response("Task already processed", { status: 400 });
     }
@@ -44,7 +47,8 @@ export async function POST(req: NextRequest) {
 
     const runtimeContext = new RuntimeContext<{ mode: string }>();
     // Set mode based on task type
-    const mode = task.type === TASK_TYPE_PLANNER ? TASK_TYPE_PLANNER : "task";
+    const mode: AGENT_MODE =
+      task.type === TASK_TYPE_PLANNER ? "planner" : "task";
     runtimeContext.set("mode", mode);
 
     try {
@@ -66,10 +70,8 @@ export async function POST(req: NextRequest) {
         }
       );
 
-      // Take response.text and write to task's 'status' field
+      // Take response.text and write to task's 'reply' field
       const responseText = result.text || "Task completed";
-
-      await finishTask(userId, id, threadId, responseText, "");
 
       // If this was a successful planner task, schedule the next one for midnight
       if (task.type === TASK_TYPE_PLANNER) {
@@ -88,29 +90,60 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      if (task.cron) {
+        const job = new Cron(task.cron);
+        const nextRun = job.nextRun();
+        if (!nextRun) throw new Error("Invalid cron schedule");
+
+        const timestamp = Math.floor(nextRun.getTime() / 1000);
+        // Update the current task with the next run timestamp
+        await updateTask({
+          ...task,
+          timestamp,
+          reply: responseText, // Reset reply for next run
+          state: "", // Reset state for next run
+          error: "", // Clear any previous errors
+        });
+        console.log(
+          `[task] Updated cron task ${id} for next run at: ${new Date(
+            timestamp * 1000
+          ).toISOString()}`
+        );
+      } else {
+        // Single-shot task finished
+        await finishTask(userId, id, threadId, responseText, "");
+      }
+
       return NextResponse.json({
         success: true,
-        status: responseText,
+        reply: responseText,
         threadId: threadId,
       });
     } catch (error) {
       console.error("Task processing error:", error);
 
-      // On exception write the error text into task using finishTask with status="error"
+      // On exception, update the task with error and retry timestamp instead of finish+add
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error occurred";
-
-      // Mark task as finished with error
-      await finishTask(userId, id, threadId, "error", errorMessage);
 
       // Re-schedule the same task with different retry intervals based on type
       const retryDelaySeconds = task.type === TASK_TYPE_PLANNER ? 600 : 60; // 10 minutes for planner, 1 minute for others
       const retryTimestamp = Math.floor(Date.now() / 1000) + retryDelaySeconds;
-      await addTask(generateId(), userId, retryTimestamp, task.task, task.type, threadId);
+
+      // Update the current task instead of finishing and adding a new one
+      await updateTask({
+        ...task,
+        timestamp: retryTimestamp,
+        reply: "", // Keep reply empty so it can be retried
+        state: "", // Keep state empty so it can be retried
+        error: errorMessage, // Set the error message
+        thread_id: threadId, // Update thread_id if it was generated
+      });
+
       console.log(
-        `Re-scheduled ${
+        `Updated ${
           task.type || "regular"
-        } task for user ${userId} at timestamp ${retryTimestamp} (retry in ${retryDelaySeconds} seconds)`
+        } task ${id} for retry at timestamp ${retryTimestamp} (retry in ${retryDelaySeconds} seconds) with error: ${errorMessage}`
       );
 
       return NextResponse.json(

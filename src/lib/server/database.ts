@@ -36,7 +36,8 @@ async function initializeDatabase() {
       user_id TEXT NOT NULL,
       timestamp INTEGER NOT NULL,
       task TEXT NOT NULL,
-      status TEXT DEFAULT '',
+      reply TEXT DEFAULT '',
+      state TEXT DEFAULT '',
       thread_id TEXT DEFAULT '',
       error TEXT DEFAULT ''
     )`,
@@ -90,6 +91,65 @@ async function initializeDatabase() {
     // Column already exists
   }
 
+  try {
+    await db.execute(`ALTER TABLE tasks ADD COLUMN title TEXT NOT NULL DEFAULT '';`);
+  } catch {
+    // Column already exists
+  }
+
+  try {
+    await db.execute(`ALTER TABLE tasks ADD COLUMN cron TEXT NOT NULL DEFAULT '';`);
+  } catch {
+    // Column already exists
+  }
+
+  // Migration: Rename status column to reply
+  try {
+    // Check if the status column exists and reply column doesn't exist
+    const tableInfo = await db.execute(`PRAGMA table_info(tasks)`);
+    const hasStatusColumn = tableInfo.rows.some((row: Record<string, unknown>) => row.name === 'status');
+    const hasReplyColumn = tableInfo.rows.some((row: Record<string, unknown>) => row.name === 'reply');
+    
+    if (hasStatusColumn && !hasReplyColumn) {
+      console.log('Migrating tasks table: renaming status column to reply...');
+      
+      // SQLite doesn't support RENAME COLUMN directly in older versions, so we need to recreate the table
+      await db.execute(`CREATE TABLE tasks_migration (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        task TEXT NOT NULL,
+        reply TEXT DEFAULT '',
+        state TEXT DEFAULT '',
+        thread_id TEXT DEFAULT '',
+        error TEXT DEFAULT '',
+        deleted BOOLEAN DEFAULT FALSE,
+        type TEXT DEFAULT '',
+        title TEXT NOT NULL DEFAULT '',
+        cron TEXT NOT NULL DEFAULT ''
+      )`);
+      
+      // Copy data from old table, mapping status to reply and setting state based on reply/error
+      await db.execute(`INSERT INTO tasks_migration (id, user_id, timestamp, task, reply, state, thread_id, error, deleted, type, title, cron)
+        SELECT id, user_id, timestamp, task, status,
+               CASE
+                 WHEN error != '' THEN 'error'
+                 WHEN status != '' THEN 'finished'
+                 ELSE ''
+               END,
+               thread_id, error, deleted, type, title, cron FROM tasks`);
+      
+      // Drop old table and rename new one
+      await db.execute(`DROP TABLE tasks`);
+      await db.execute(`ALTER TABLE tasks_migration RENAME TO tasks`);
+      
+      console.log('Tasks table migration completed: status column renamed to reply.');
+    }
+  } catch (error) {
+    // Migration failed, but continue - table might already be in correct format
+    console.warn('Tasks status->reply migration warning:', error);
+  }
+
   // Create indexes
   try {
     await db.batch([
@@ -97,8 +157,10 @@ async function initializeDatabase() {
       `CREATE INDEX IF NOT EXISTS idx_chats_first_message_time ON chats(first_message_time)`,
       `CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id)`,
       `CREATE INDEX IF NOT EXISTS idx_tasks_timestamp ON tasks(timestamp)`,
-      `CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)`,
-      `CREATE INDEX IF NOT EXISTS idx_tasks_user_status_timestamp ON tasks(user_id, status, timestamp)`,
+      `CREATE INDEX IF NOT EXISTS idx_tasks_reply ON tasks(reply)`,
+      `CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state)`,
+      `CREATE INDEX IF NOT EXISTS idx_tasks_user_reply_timestamp ON tasks(user_id, reply, timestamp)`,
+      `CREATE INDEX IF NOT EXISTS idx_tasks_user_state_timestamp ON tasks(user_id, state, timestamp)`,
       `CREATE INDEX IF NOT EXISTS idx_events_type_id ON events(type, id)`,
       `CREATE INDEX IF NOT EXISTS idx_events_user_id_id ON events(user_id, id)`,
       `CREATE INDEX IF NOT EXISTS idx_notes_user_id ON notes(user_id)`,
@@ -160,15 +222,16 @@ async function initializeDatabase() {
         user_id TEXT NOT NULL,
         timestamp INTEGER NOT NULL,
         task TEXT NOT NULL,
-        status TEXT DEFAULT '',
+        reply TEXT DEFAULT '',
+        state TEXT DEFAULT '',
         thread_id TEXT DEFAULT '',
         error TEXT DEFAULT '',
         deleted BOOLEAN DEFAULT FALSE
       )`);
       
       // Copy data from old table
-      await db.execute(`INSERT INTO tasks_new (id, user_id, timestamp, task, status, thread_id, error, deleted)
-        SELECT id, user_id, timestamp, task, status, thread_id, error, deleted FROM tasks`);
+      await db.execute(`INSERT INTO tasks_new (id, user_id, timestamp, task, reply, state, thread_id, error, deleted)
+        SELECT id, user_id, timestamp, task, status, '', thread_id, error, deleted FROM tasks`);
       
       // Drop old table and rename new one
       await db.execute(`DROP TABLE tasks`);
@@ -177,8 +240,10 @@ async function initializeDatabase() {
       // Recreate indexes for tasks table
       await db.execute(`CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id)`);
       await db.execute(`CREATE INDEX IF NOT EXISTS idx_tasks_timestamp ON tasks(timestamp)`);
-      await db.execute(`CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)`);
-      await db.execute(`CREATE INDEX IF NOT EXISTS idx_tasks_user_status_timestamp ON tasks(user_id, status, timestamp)`);
+      await db.execute(`CREATE INDEX IF NOT EXISTS idx_tasks_reply ON tasks(reply)`);
+      await db.execute(`CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state)`);
+      await db.execute(`CREATE INDEX IF NOT EXISTS idx_tasks_user_reply_timestamp ON tasks(user_id, reply, timestamp)`);
+      await db.execute(`CREATE INDEX IF NOT EXISTS idx_tasks_user_state_timestamp ON tasks(user_id, state, timestamp)`);
       
       console.log('Tasks table migration completed successfully.');
     }

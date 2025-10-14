@@ -16,7 +16,7 @@ export class ContextInjectingProcessor implements Processor {
     if (msg.role !== "user") throw new Error("User message expected");
 
     const notes = await listNotes(msg.resourceId!)
-    const tasks = await listTasks();
+    const tasks = await listTasks(msg.resourceId!);
     const text = `
 Stored notes:
 ${notes.map(n => `- ${n.title}`).join('\n')}

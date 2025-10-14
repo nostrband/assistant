@@ -4,7 +4,7 @@ import Exa from "exa-js";
 
 export const webSearchTool = createTool({
   id: "web-search",
-  description: "Search the web using Exa API and get content from relevant web pages. Returns search results with full text content.",
+  description: "Search the web using Exa API and get content from relevant web pages. Returns search results with full text content. Text content is usually cached, use live: true to get up to date results for time-sensitive data (prices, latest news, etc)",
   inputSchema: z.object({
     query: z
       .string()

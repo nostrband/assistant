@@ -7,10 +7,13 @@ export interface Task {
   user_id: string;
   timestamp: number;
   task: string;
-  status: string;
+  reply: string;
+  state: string;
   thread_id: string;
   error: string;
   type: string;
+  title: string;
+  cron: string;
 }
 
 // Set a new task - fails if task for this timestamp already exists for this user
@@ -20,15 +23,17 @@ export async function addTask(
   timestamp: number,
   task: string,
   type: string = '',
-  thread_id: string = ''
+  thread_id: string = '',
+  title: string = '',
+  cron: string = ''
 ): Promise<string> {
   const db = getDatabase();
 
   // Insert new task
   await db.execute({
-    sql: `INSERT INTO tasks (id, user_id, timestamp, task, status, thread_id, error, type)
-          VALUES (?, ?, ?, ?, '', ?, '', ?)`,
-    args: [id, user_id, timestamp, task, thread_id, type],
+    sql: `INSERT INTO tasks (id, user_id, timestamp, task, reply, state, thread_id, error, type, title, cron)
+          VALUES (?, ?, ?, ?, '', '', ?, '', ?, ?, ?)`,
+    args: [id, user_id, timestamp, task, thread_id, type, title, cron],
   });
 
   return id;
@@ -36,20 +41,25 @@ export async function addTask(
 
 // List tasks - returns up to 100 most recent tasks
 export async function listTasks(
+  user_id: string,
   include_finished: boolean = false,
   until?: number
 ): Promise<Task[]> {
   const db = getDatabase();
 
-  let sql = `SELECT id, user_id, timestamp, task, status, thread_id, error, type
+  let sql = `SELECT id, user_id, timestamp, task, reply, state, thread_id, error, type, title, cron
              FROM tasks`;
   const args: (string | number)[] = [];
 
   const conditions: string[] = [];
 
-  // Filter by status if not including finished tasks
+  // Filter by user_id
+  conditions.push("user_id = ?");
+  args.push(user_id);
+
+  // Filter by reply if not including finished tasks
   if (!include_finished) {
-    conditions.push("status = ''");
+    conditions.push("reply = ''");
   }
 
   // Always filter out deleted tasks
@@ -82,10 +92,13 @@ export async function listTasks(
     user_id: row.user_id as string,
     timestamp: row.timestamp as number,
     task: row.task as string,
-    status: row.status as string,
+    reply: row.reply as string,
+    state: row.state as string,
     thread_id: row.thread_id as string,
     error: row.error as string,
     type: (row.type as string) || '',
+    title: (row.title as string) || '',
+    cron: (row.cron as string) || '',
   }));
 }
 
@@ -105,14 +118,14 @@ export async function deleteTask(
   if (r.rowsAffected <= 0) throw new Error("Failed to delete the task");
 }
 
-// Get task with oldest timestamp with status '' for this user that is ready to trigger (timestamp <= now)
+// Get task with oldest timestamp with reply '' for this user that is ready to trigger (timestamp <= now)
 export async function getNextTask(user_id: string): Promise<Task | null> {
   const db = getDatabase();
   const currentTimeSeconds = Math.floor(Date.now() / 1000); // Convert milliseconds to seconds
   const result = await db.execute({
-    sql: `SELECT id, user_id, timestamp, task, status, thread_id, error, type
+    sql: `SELECT id, user_id, timestamp, task, reply, state, thread_id, error, type, title, cron
           FROM tasks
-          WHERE user_id = ? AND status = '' AND timestamp <= ? AND (deleted IS NULL OR deleted = FALSE)
+          WHERE user_id = ? AND state = '' AND timestamp <= ? AND (deleted IS NULL OR deleted = FALSE)
           ORDER BY timestamp ASC
           LIMIT 1`,
     args: [user_id, currentTimeSeconds],
@@ -128,10 +141,13 @@ export async function getNextTask(user_id: string): Promise<Task | null> {
     user_id: row.user_id as string,
     timestamp: row.timestamp as number,
     task: row.task as string,
-    status: row.status as string,
+    reply: row.reply as string,
+    state: row.state as string,
     thread_id: row.thread_id as string,
     error: row.error as string,
     type: (row.type as string) || '',
+    title: (row.title as string) || '',
+    cron: (row.cron as string) || '',
   };
 }
 
@@ -142,7 +158,7 @@ export async function getTask(
 ): Promise<Task> {
   const db = getDatabase();
   const result = await db.execute({
-    sql: `SELECT id, user_id, timestamp, task, status, thread_id, error, type
+    sql: `SELECT id, user_id, timestamp, task, reply, state, thread_id, error, type, title, cron
           FROM tasks
           WHERE user_id = ? AND id = ? AND (deleted IS NULL OR deleted = FALSE)`,
     args: [user_id, id],
@@ -156,48 +172,86 @@ export async function getTask(
     user_id: row.user_id as string,
     timestamp: row.timestamp as number,
     task: row.task as string,
-    status: row.status as string,
+    reply: row.reply as string,
+    state: row.state as string,
     thread_id: row.thread_id as string,
     error: row.error as string,
     type: (row.type as string) || '',
+    title: (row.title as string) || '',
+    cron: (row.cron as string) || '',
   };
 }
 
-// Finish task - error if user_id+timestamp not found or already status !== '', error if input status === ''
+// Finish task - error if user_id+timestamp not found or already reply !== '', error if input reply === ''
 export async function finishTask(
   user_id: string,
   id: string,
   thread_id: string,
-  status: string,
+  reply: string,
   error: string
 ): Promise<void> {
-  if (status === "") throw new Error("Status cannot be empty");
+  if (reply === "") throw new Error("Reply cannot be empty");
 
   const db = getDatabase();
+
+  // Determine state based on reply and error
+  let state = "";
+  if (error !== "") {
+    state = "error";
+  } else if (reply !== "") {
+    state = "finished";
+  }
 
   // Update the task
   const r = await db.execute({
     sql: `UPDATE tasks
-          SET status = ?, thread_id = ?, error = ?
-          WHERE user_id = ? AND id = ? AND (deleted IS NULL OR deleted = FALSE) AND status = ''`,
-    args: [status, thread_id, error, user_id, id],
+          SET reply = ?, state = ?, thread_id = ?, error = ?
+          WHERE user_id = ? AND id = ? AND (deleted IS NULL OR deleted = FALSE) AND reply = ''`,
+    args: [reply, state, thread_id, error, user_id, id],
   });
   if (r.rowsAffected <= 0) throw new Error("Task deleted or already finished");
 }
 
-// Undelete task by ID - returns true if task was found and undeleted, false if not found
-export async function undeleteTask(
-  user_id: string,
-  id: string
-): Promise<void> {
+// Update task - updates all fields of an existing task
+export async function updateTask(task: Task): Promise<void> {
   const db = getDatabase();
 
+  // Update the task with all provided values
   const r = await db.execute({
-    sql: `UPDATE tasks SET deleted = FALSE WHERE id = ? AND user_id = ? AND deleted = TRUE`,
-    args: [id, user_id],
+    sql: `UPDATE tasks
+          SET user_id = ?, timestamp = ?, task = ?, reply = ?, state = ?, thread_id = ?, error = ?, type = ?, title = ?, cron = ?
+          WHERE id = ? AND (deleted IS NULL OR deleted = FALSE)`,
+    args: [
+      task.user_id,
+      task.timestamp,
+      task.task,
+      task.reply,
+      task.state,
+      task.thread_id,
+      task.error,
+      task.type,
+      task.title,
+      task.cron,
+      task.id
+    ],
   });
-  if (r.rowsAffected <= 0) throw new Error("Failed to undelete the task");
+
+  if (r.rowsAffected <= 0) throw new Error("Task not found or already deleted");
 }
+
+// // Undelete task by ID - returns true if task was found and undeleted, false if not found
+// export async function undeleteTask(
+//   user_id: string,
+//   id: string
+// ): Promise<void> {
+//   const db = getDatabase();
+
+//   const r = await db.execute({
+//     sql: `UPDATE tasks SET deleted = FALSE WHERE id = ? AND user_id = ? AND deleted = TRUE`,
+//     args: [id, user_id],
+//   });
+//   if (r.rowsAffected <= 0) throw new Error("Failed to undelete the task");
+// }
 
 // Check if there's a planner task within the last 24 hours
 export async function hasPlannerTaskInLast24Hours(user_id: string): Promise<boolean> {
