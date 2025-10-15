@@ -100,7 +100,7 @@ export const MessageItem = React.memo(function MessageItem({
                   </Response>
                 );
               case "reasoning":
-                if (status === "streaming" && isLastMessage) {
+                if (true) { // status === "streaming" && isLastMessage) {
                   return (
                     <Reasoning
                       key={`${message.id}-${partIndex}`}

@@ -70,14 +70,17 @@ async function initializeRoutineTasks() {
           console.log(`[jobs] No ${taskType} cron task found, creating one`);
           
           // Calculate next run time from cron schedule
-          const job = new Cron(cronSchedule);
-          const nextRun = job.nextRun();
-          if (!nextRun) {
-            console.error(`[jobs] Invalid cron schedule for ${taskType}: ${cronSchedule}`);
-            continue;
-          }
+          // const job = new Cron(cronSchedule);
+          // const nextRun = job.nextRun();
+          // if (!nextRun) {
+          //   console.error(`[jobs] Invalid cron schedule for ${taskType}: ${cronSchedule}`);
+          //   continue;
+          // }
           
-          const timestamp = Math.floor(nextRun.getTime() / 1000);
+          // const timestamp = Math.floor(nextRun.getTime() / 1000);
+
+          // First run immediately
+          const timestamp = Math.floor(Date.now() / 1000);
           
           // Create task content based on type
           let taskContent = '';

@@ -30,7 +30,32 @@ export async function loadChat(
     });
 
     const messages = convertMessages(result?.uiMessages || []).to("AIV5.UI") as MyUIMessage[];
-    return messages;
+    
+    // Merge consecutive reasoning parts into one part by appending all 'text' fields
+    const processedMessages = messages.map(message => {
+      const mergedParts = [];
+      
+      for (const part of message.parts) {
+        if (part.type === 'reasoning') {
+          const lastPart = mergedParts[mergedParts.length - 1];
+          if (lastPart && lastPart.type === 'reasoning') {
+            // Append text to last reasoning part
+            lastPart.text += part.text || '';
+            continue;
+          }
+        }
+
+        // Add non-reasoning part as-is
+        mergedParts.push(part);
+      }
+      
+      return {
+        ...message,
+        parts: mergedParts
+      };
+    });
+    
+    return processedMessages;
   } catch {
     return [];
   }

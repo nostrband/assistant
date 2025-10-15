@@ -64,6 +64,7 @@ function getLongTaskInstructions(mode: AGENT_MODE) {
 Long-running tasks:
 - Create a step-by-step plan for yourself, it will be executed in the background without tool call limits.
 - You MUST add the last step to the plan: instructions for yourself to use sendMessageTool to notify the user about task results.
+- You MUST include all necessary context into the plan, the task doesn't have access to the user message history.
 - Use addTaskTool to create a task with your plan.
 - Set task datetime to current time to be executed immediately.
 - Confirm to user that you're working on their query and will report back when it's ready.
@@ -76,11 +77,16 @@ export function getInstructions(mode: AGENT_MODE) {
 
 Principles:
 ${getPrinciples(mode).trim()}
-- Never ask to confirm tool usage - all tools are always allowed.
+- All tools are always allowed, no need to ask for permission.
 - Current time is always passed with user messages, use it to schedule tasks and reason about current user situation.
 
 Limitations:
 ${getLimitations(mode).trim()}
+- NEVER invent or assume or hallucinate data that you don't have (tool failed, no suitable tool, etc) - user expects honesty, not cheating.
+- Careful with 'updateWorkingMemory' tool - it overwrites all memory, prefer 'patchWorkingMemory' for safer and more efficient memory updates.
+- If you're instructed to 'update a field in working memory' - always use patchWorkingMemory to avoid overwriting all memory.
+- Do not store task list in working memory - use addTask/listTask tools.
+- Do not store list of notes in working memory - use listNotes/searchNotes tools.
 
 Workflow:
 ${getWorkflow(mode).trim()}

@@ -15,15 +15,13 @@ export const assistantMemory = new Memory({
   //     : "file:vector.db", // Store in DATA_PATH if set, otherwise project root
   // }),
   processors: [
-    // Example 1: Remove all tool calls/results
-    new ToolCallFilter({ exclude: [
-      "listChatsTool",
-      "listTasksTool",
-      "deleteTaskTool",
-      "searchNotesTool",
-      "listNotesTool",
-      "updateWorkingMemory"
-    ]}),
+    // Don't filter anything, especially updateWorkingMemory, which
+    // is dangerous and should be logged. Hopefully it will use patchWorkingMemory
+    // now which is efficient, thus no need to hide tool calls.
+
+    // new ToolCallFilter({ exclude: [
+    //   "updateWorkingMemory"
+    // ]}),
 
     // Ensure the total tokens from memory don't exceed ~20k
     new TokenLimiter(20000),

@@ -13,6 +13,7 @@ import { searchNotesTool } from "../tools/search-notes";
 import { listNotesTool } from "../tools/list-notes";
 import { getWeatherTool } from "../tools/get-weather";
 import { webSearchTool } from "../tools/web-search";
+import { patchWorkingMemoryTool } from "../tools/patch-working-memory";
 import { assistantMemory } from "../memory";
 import { InputProcessor, UnicodeNormalizer } from "@mastra/core/processors";
 import { ContextInjectingProcessor, TimestampingProcessor } from "../processor";
@@ -44,6 +45,7 @@ export const assistantAgent = new Agent({
     listNotesTool,
     getWeatherTool,
     webSearchTool,
+    patchWorkingMemoryTool,
   },
   // FIXME does it interfere with tool call results?
   // outputProcessors: [new CleanFinalMessageProcessor()],

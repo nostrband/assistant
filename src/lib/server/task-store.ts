@@ -57,9 +57,9 @@ export async function listTasks(
   conditions.push("user_id = ?");
   args.push(user_id);
 
-  // Filter by reply if not including finished tasks
+  // Filter by state if not including finished tasks
   if (!include_finished) {
-    conditions.push("reply = ''");
+    conditions.push("state = ''");
   }
 
   // Always filter out deleted tasks
