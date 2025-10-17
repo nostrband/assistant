@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { type UIMessage } from "ai";
-import { mastra } from "@/mastra";
-import { convertMessages, UIMessageWithMetadata } from "@mastra/core/agent";
+import { convertToModelMessages, type UIMessage } from "ai";
 import { createChat, updateChat } from "@/lib/server/chat-store";
 import { USER_ID } from "@/lib/const";
-import { CoreMessage } from "@mastra/core";
-import { assistantMemory } from "@/mastra/memory";
-import { RuntimeContext } from "@mastra/core/runtime-context";
+import {
+  getMessages,
+  saveMessages,
+  getThread,
+  saveThread,
+} from "@/lib/server/memory-store";
 import { publishChatMessage } from "@/lib/server/events";
 import { addCreatedAt } from "@/lib/utils";
+import { makeAgent } from "@/ai/agent";
+import { AssistantUIMessage } from "@/ai/agent";
 
-const assistantAgent = mastra.getAgent("assistantAgent");
 const userId = USER_ID; // FIXME from auth info
 
 export async function GET(req: NextRequest) {
@@ -20,20 +22,17 @@ export async function GET(req: NextRequest) {
     return new Response("Specify chat id", { status: 400 });
   }
 
-  const memory = assistantMemory;
   try {
-    const result = await memory.query({
+    const messages = await getMessages({
       threadId: id,
-      resourceId: userId,
+      resourceId: USER_ID,
+      limit: 50,
     });
-
-    const messages = convertMessages(result?.uiMessages || []).to("AIV5.UI");
     return NextResponse.json(messages);
   } catch {
     return NextResponse.json([]);
   }
 }
-
 export async function POST(req: NextRequest) {
   try {
     const {
@@ -42,32 +41,41 @@ export async function POST(req: NextRequest) {
       regenerate,
     }: { message: UIMessage; id: string; regenerate?: boolean } =
       await req.json();
-    console.log("process message", { regenerate, message });
+    console.log(
+      regenerate ? "regenerate" : "process",
+      "message",
+      JSON.stringify(message, null, 2)
+    );
 
-    const memory = assistantMemory;
-
-    let result:
-      | {
-          messages: CoreMessage[];
-          uiMessages: UIMessageWithMetadata[];
-        }
-      | undefined;
+    // Get existing messages
+    let originalMessages: AssistantUIMessage[] = [];
     try {
-      result = await memory.query({
-        threadId: id,
+      const existingMessages = await getMessages({
         resourceId: userId,
+        threadId: id,
+        // Limit context size to 20 latest messages
+        limit: 20,
       });
+      originalMessages = existingMessages.filter(
+        (m) => !regenerate || m.id !== message.id
+      );
     } catch {}
-
-    const originalMessages = convertMessages(result?.uiMessages || [])
-      .to("AIV5.UI")
-      .filter((m) => !regenerate || m.id !== message.id);
-
-    const runtimeContext = new RuntimeContext<{ mode: string }>();
-    runtimeContext.set("mode", "user");
 
     try {
       const now = new Date();
+
+      // Ensure thread exists
+      let thread = await getThread(id);
+      if (!thread) {
+        thread = {
+          id,
+          resourceId: userId,
+          createdAt: now,
+          updatedAt: now,
+          title: "",
+        };
+        await saveThread(thread);
+      }
 
       // Make user's message visible
       if (!originalMessages.length) {
@@ -92,30 +100,53 @@ export async function POST(req: NextRequest) {
         timestamp: now.toISOString(),
       });
 
-      // Use streamVNext with AI SDK v5 format (experimental)
-      const stream = await assistantAgent.stream([message], {
-        format: "aisdk", // Enable AI SDK v5 compatibility
-        runtimeContext,
-        memory: {
-          thread: id,
-          resource: userId,
-        },
-        maxSteps: 10,
+      const agent = await makeAgent({
+        mode: "user",
+        threadId: id,
+        userId,
+        stepLimit: 10,
       });
 
-      // console.log("Message", JSON.stringify(messages, null, 2));
-      // console.log("Trace ID:", stream.traceId);
-      // console.log("View trace at: http://localhost:3000/traces/" + stream.traceId);
+      // Add user message with proper metadata
+      const userMessage: AssistantUIMessage = {
+        ...message,
+        metadata: {
+          createdAt: now.toISOString(),
+          threadId: id,
+          resourceId: userId,
+        },
+      };
+      originalMessages.push(userMessage);
+      console.log("originalMessages", JSON.stringify(originalMessages, null, 2));
+      console.log("modelMessages", JSON.stringify(convertToModelMessages(originalMessages), null, 2));
+
+      const stream = agent.stream({
+        messages: convertToModelMessages(originalMessages),
+      });
 
       // Stream is already in AI SDK v5 format
       return stream.toUIMessageStreamResponse({
         originalMessages,
-        onFinish: async ({ messages }) => {
+        messageMetadata(options) {
+          return {
+            createdAt: new Date().toISOString(),
+            threadId: id,
+            resourceId: userId,
+          };
+        },
+        onFinish: async ({ responseMessage }) => {
           try {
+            const assistantMessage = responseMessage;
+
+            const uiMessages = [userMessage, assistantMessage];
+
+            // Save messages using our new method
+            await saveMessages(uiMessages);
+
             // Publish agent's messages event
             await publishChatMessage({
               chatId: id,
-              messages: addCreatedAt(messages),
+              messages: addCreatedAt(uiMessages),
               timestamp: new Date().toISOString(),
             });
           } catch (error) {

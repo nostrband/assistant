@@ -24,11 +24,11 @@ import {
   ToolOutput,
 } from "@/components/ai-elements/tool";
 import { Loader } from "@/components/ai-elements/loader";
-import { MyUIMessage } from "@/lib/server/chat-store";
 import type { ToolUIPart } from "ai";
+import { AssistantUIMessage } from "@/ai/agent";
 
 interface MessageItemProps {
-  message: MyUIMessage;
+  message: AssistantUIMessage;
   status: "ready" | "streaming" | "submitted" | "error";
   isLastMessage: boolean;
   onRegenerate: (messageId: string) => void;

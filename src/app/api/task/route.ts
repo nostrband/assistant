@@ -1,17 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateId } from "ai";
-import { mastra } from "@/mastra";
-import {
-  getTask,
-  finishTask,
-  updateTask,
-} from "@/lib/server/task-store";
+import { convertToModelMessages, generateId, ModelMessage } from "ai";
+import { getTask, finishTask, updateTask } from "@/lib/server/task-store";
 import { USER_ID } from "@/lib/const";
-import { RuntimeContext } from "@mastra/core/runtime-context";
 import { AGENT_MODE } from "@/mastra/instructions";
 import { Cron } from "croner";
+import { makeAgent } from "@/ai/agent";
+import {
+  getMessages,
+  saveMessages,
+  getThread,
+  saveThread,
+} from "@/lib/server/memory-store";
+import { AssistantUIMessage } from "@/ai/agent";
+import { createPlannerTaskPrompt } from "@/lib/utils";
 
-const assistantAgent = mastra.getAgent("assistantAgent");
 const userId = USER_ID; // FIXME from auth info
 
 export async function POST(req: NextRequest) {
@@ -42,30 +44,85 @@ export async function POST(req: NextRequest) {
     // Use existing thread_id from database if available, otherwise generate new one
     const threadId = task.thread_id || generateId();
 
-    const runtimeContext = new RuntimeContext<{ mode: string }>();
+    // Get existing messages for this thread
+    let existingMessages: AssistantUIMessage[] = [];
+    try {
+      existingMessages = await getMessages({ resourceId: userId, threadId });
+    } catch {}
+
+    const messages = convertToModelMessages(existingMessages);
+    const newMessage: ModelMessage = {
+      role: "user",
+      content: task.task,
+    };
+    messages.push(newMessage);
+
     // Set mode based on task type
-    const mode: AGENT_MODE =
-      task.type === "planner" ? "planner" : "task";
-    runtimeContext.set("mode", mode);
+    const mode: AGENT_MODE = task.type === "planner" ? "planner" : "task";
+    if (mode === "planner")
+      task.task = createPlannerTaskPrompt();
+
+    const agent = await makeAgent({
+      mode,
+      threadId,
+      userId,
+      stepLimit: 50,
+    });
 
     try {
-      // Use task.task as input message to the assistantAgent
-      const result = await assistantAgent.generate(
-        [
-          {
-            role: "user",
-            content: task.task,
+      // Ensure thread exists
+      const now = new Date();
+      let thread = await getThread(threadId);
+      if (!thread) {
+        thread = {
+          id: threadId,
+          resourceId: userId,
+          createdAt: now,
+          updatedAt: now,
+          title: "",
+        };
+        await saveThread(thread);
+      }
+
+      // Use task.task as input message to the agent
+      const result = await agent.generate({ messages });
+
+      // Create UI messages for saving
+      const userMessage: AssistantUIMessage = {
+        id: generateId(),
+        role: "user",
+        parts: [{ type: "text", text: task.task }],
+        metadata: {
+          createdAt: now.toISOString(),
+          threadId,
+          resourceId: userId,
+        },
+      };
+
+      const assistantMessages: AssistantUIMessage[] =
+        result.response.messages.map((msg, index) => ({
+          id: generateId(),
+          role: msg.role as "assistant",
+          parts: [
+            {
+              type: "text",
+              text:
+                typeof msg.content === "string"
+                  ? msg.content
+                  : JSON.stringify(msg.content),
+            },
+          ],
+          metadata: {
+            createdAt: new Date(now.getTime() + index + 1).toISOString(),
+            threadId,
+            resourceId: userId,
           },
-        ],
-        {
-          runtimeContext,
-          memory: {
-            thread: threadId,
-            resource: userId,
-          },
-          maxSteps: 50,
-        }
-      );
+        }));
+
+      const allNewMessages = [userMessage, ...assistantMessages];
+
+      // Save messages using our new method
+      await saveMessages(allNewMessages);
 
       // Take response.text and write to task's 'reply' field
       const responseText = result.text || "Task completed";
@@ -80,7 +137,7 @@ export async function POST(req: NextRequest) {
         await updateTask({
           ...task,
           timestamp,
-          thread_id: '', // Reset to start from scratch
+          thread_id: "", // Reset to start from scratch
           reply: responseText, // Reset reply for next run
           state: "", // Reset state for next run
           error: "", // Clear any previous errors
@@ -115,7 +172,7 @@ export async function POST(req: NextRequest) {
       await updateTask({
         ...task,
         timestamp: retryTimestamp,
-        reply: "", 
+        reply: "",
         state: "", // Keep state empty so it can be retried
         error: errorMessage, // Set the error message
         thread_id: threadId, // Update thread_id if it was generated

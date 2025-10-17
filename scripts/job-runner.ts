@@ -4,7 +4,7 @@ import { getNextTask, addTask, hasCronTaskOfType } from '../src/lib/server/task-
 import { USER_ID, ROUTINE_TASKS } from '../src/lib/const';
 import { generateId } from 'ai';
 import { createPlannerTaskPrompt } from '@/lib/utils';
-import { Cron } from 'croner';
+import { waitForMigrationComplete } from '../src/lib/server/memory-store';
 
 let isShuttingDown = false;
 let timeoutId: NodeJS.Timeout | null = null;
@@ -86,7 +86,6 @@ async function initializeRoutineTasks() {
           let taskContent = '';
           let title = '';
           if (taskType === 'planner') {
-            taskContent = createPlannerTaskPrompt();
             title = 'Daily Planning';
           }
           
@@ -115,7 +114,10 @@ async function initializeRoutineTasks() {
 }
 
 
-function startPolling() {
+async function startPolling() {
+  // Wait for migration to complete before starting
+  await waitForMigrationComplete();
+  
   // Initialize routine tasks before starting polling
   initializeRoutineTasks().then(() => {
     // Start the first check
@@ -146,4 +148,7 @@ function startPolling() {
 }
 
 console.log('[jobs] starting task checker...');
-startPolling();
+startPolling().catch(error => {
+  console.error('[jobs] Failed to start polling:', error);
+  process.exit(1);
+});

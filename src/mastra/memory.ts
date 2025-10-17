@@ -1,12 +1,16 @@
 import { Memory } from "@mastra/memory";
 import { LibSQLStore } from "@mastra/libsql";
 import { TokenLimiter, ToolCallFilter } from "@mastra/memory/processors";
-import getDatabase from "@/lib/server/database";
+import { createClient } from "@libsql/client";
+// import getDatabase from "@/lib/server/database";
 
 // Configure memory with LibSQL storage
 export const assistantMemory = new Memory({
   storage: new LibSQLStore({
-    client: getDatabase(),
+    client: createClient({
+      url: `file:memory.db`
+    })
+    // client: getDatabase(),
   }),
   // vector search is shit
   // vector: new LibSQLVector({

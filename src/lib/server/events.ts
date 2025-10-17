@@ -24,10 +24,8 @@ export async function publish(type: string, payload: unknown): Promise<EventRow>
   const data = JSON.stringify(payload);
   
   const db = getDatabase();
-  const result = await db.execute({
-    sql: `INSERT INTO events (type, ts, data, user_id) VALUES (?, ?, ?, ?)`,
-    args: [type, ts, data, user_id]
-  }) as { lastInsertRowid: number | bigint };
+  const stmt = db.prepare(`INSERT INTO events (type, ts, data, user_id) VALUES (?, ?, ?, ?)`);
+  const result = stmt.run(type, ts, data, user_id);
   
   const id = Number(result.lastInsertRowid);
   const row: EventRow = { id, type, ts, data, user_id };
@@ -50,18 +48,17 @@ export async function fetchSince(since: number, user_id: string, limit = 1000): 
   const db = getDatabase();
   
   try {
-    const result = await db.execute({
-      sql: `
-        SELECT id, type, ts, data, user_id
-        FROM events
-        WHERE id > ? AND user_id = ?
-        ORDER BY id ASC
-        LIMIT ?
-      `,
-      args: [since, user_id, limit]
-    });
+    const stmt = db.prepare(`
+      SELECT id, type, ts, data, user_id
+      FROM events
+      WHERE id > ? AND user_id = ?
+      ORDER BY id ASC
+      LIMIT ?
+    `);
     
-    return result.rows.map(row => ({
+    const results = stmt.all(since, user_id, limit);
+    
+    return (results as Record<string, unknown>[]).map((row) => ({
       id: Number(row.id),
       type: String(row.type),
       ts: String(row.ts),
@@ -78,10 +75,8 @@ export async function prune(keepLastN = 100_000): Promise<void> {
   const db = getDatabase();
   
   try {
-    await db.execute({
-      sql: `DELETE FROM events WHERE id < (SELECT MAX(id) FROM events) - ?`,
-      args: [keepLastN]
-    });
+    const stmt = db.prepare(`DELETE FROM events WHERE id < (SELECT MAX(id) FROM events) - ?`);
+    stmt.run(keepLastN);
   } catch (error) {
     console.error("Error pruning events:", error);
   }

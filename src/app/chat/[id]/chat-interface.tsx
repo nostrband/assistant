@@ -26,12 +26,12 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useChat } from "@ai-sdk/react";
 import { useChatEvents } from "@/lib/client/sse-hub";
 import { DefaultChatTransport } from "ai";
-import { MyUIMessage } from "@/lib/server/chat-store";
 import { notificationSound } from "@/lib/client/notification-sound";
+import { AssistantUIMessage } from "@/ai/agent";
 
 interface ChatInterfaceProps {
   id: string;
-  initialMessages: MyUIMessage[];
+  initialMessages: AssistantUIMessage[];
 }
 
 export default function ChatInterface({
@@ -81,7 +81,7 @@ export default function ChatInterface({
         globalThis.document?.visibilityState !== "visible" ||
         latestMessage.data.chatId !== id)
     ) {
-      const payload = latestMessage.data.messages.at(-1) as MyUIMessage;
+      const payload = latestMessage.data.messages.at(-1) as AssistantUIMessage;
       if (payload.role !== "user") {
         // Play notification sound for new chat messages
         notificationSound?.play().catch((error) => {
@@ -121,12 +121,12 @@ export default function ChatInterface({
       if (!messageData.messages || !Array.isArray(messageData.messages)) return;
 
       // Convert the new messages to the expected format
-      const newMessages = messageData.messages as MyUIMessage[];
+      const newMessages = messageData.messages as AssistantUIMessage[];
 
       // Check if any of these messages are not already in our current message list
       setMessages((currentMessages) => {
         const currentMessageIds = new Set(currentMessages.map((msg) => msg.id));
-        const messagesToAdd: MyUIMessage[] = [];
+        const messagesToAdd: AssistantUIMessage[] = [];
 
         // Find messages that aren't already in our list
         for (const newMsg of newMessages) {
@@ -142,8 +142,8 @@ export default function ChatInterface({
         // Merge and sort messages by creation time to maintain proper order
         const allMessages = [...currentMessages, ...messagesToAdd];
         allMessages.sort((a, b) => {
-          const aTime = a.metadata?.createdAt?.getTime() || 0;
-          const bTime = b.metadata?.createdAt?.getTime() || 0;
+          const aTime = new Date(a.metadata!.createdAt).getTime();
+          const bTime = new Date(b.metadata!.createdAt).getTime();
           return aTime - bTime;
         });
 
@@ -174,7 +174,8 @@ export default function ChatInterface({
       text: message.text || "Sent with attachments",
       files: message.files,
       metadata: {
-        createdAt: new Date(),
+        createdAt: new Date().toISOString(),
+        threadId: id,
       },
     });
     setInput("");

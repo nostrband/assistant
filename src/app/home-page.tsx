@@ -1,7 +1,7 @@
 import { getAllChats } from '@/lib/server/chat-store';
 import Link from 'next/link';
 import NewChatButton from '@/components/new-chat-button';
-import { assistantMemory } from '@/mastra/memory';
+import { listThreads } from '@/lib/server/memory-store';
 import { USER_ID } from '@/lib/const';
 
 function formatTime(dateString: string | null): string {
@@ -28,11 +28,7 @@ function truncateMessage(message: string | null): string {
 export default async function HomePage() {
   const chats = await getAllChats();
 
-  const threads = await assistantMemory.getThreadsByResourceId({
-    resourceId: USER_ID,
-    orderBy: "updatedAt",
-    sortDirection: "DESC"
-  })
+  const threads = await listThreads(USER_ID);
   // console.log("threads", JSON.stringify(threads, null, 2));
   
   return (

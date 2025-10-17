@@ -63,13 +63,10 @@ export async function validateCreateNote(
   const db = getDatabase();
   
   // Check if user already has 500 notes
-  const countResult = await db.execute({
-    sql: 'SELECT COUNT(*) as count FROM notes WHERE user_id = ?',
-    args: [userId]
-  });
+  const stmt = db.prepare('SELECT COUNT(*) as count FROM notes WHERE user_id = ?');
+  const result = stmt.get(userId) as { count: number };
   
-  const count = countResult.rows[0]?.count as number;
-  if (count >= 500) {
+  if (result.count >= 500) {
     throw new Error('Maximum number of notes (500) reached');
   }
   
@@ -95,11 +92,10 @@ export async function createNote(
   const now = new Date().toISOString();
   const tagsJson = JSON.stringify(tags);
   
-  await db.execute({
-    sql: `INSERT INTO notes (id, user_id, title, content, tags, priority, created, updated)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    args: [noteId, userId, title, content, tagsJson, priority, now, now]
-  });
+  const stmt = db.prepare(`INSERT INTO notes (id, user_id, title, content, tags, priority, created, updated)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+  
+  stmt.run(noteId, userId, title, content, tagsJson, priority, now, now);
   
   return {
     id: noteId,
@@ -126,16 +122,14 @@ export async function validateUpdateNote(
   const db = getDatabase();
   
   // First, get the existing note
-  const existingResult = await db.execute({
-    sql: 'SELECT * FROM notes WHERE id = ? AND user_id = ?',
-    args: [noteId, userId]
-  });
+  const stmt = db.prepare('SELECT * FROM notes WHERE id = ? AND user_id = ?');
+  const result = stmt.get(noteId, userId);
   
-  if (existingResult.rows.length === 0) {
+  if (!result) {
     throw new Error('Note not found');
   }
   
-  const existing = existingResult.rows[0] as unknown as NoteRow;
+  const existing = result as NoteRow;
   
   // Prepare updated values
   const newTitle = updates.title ?? existing.title;
@@ -167,12 +161,11 @@ export async function updateNote(
   const now = new Date().toISOString();
   const tagsJson = JSON.stringify(newTags);
   
-  await db.execute({
-    sql: `UPDATE notes
-          SET title = ?, content = ?, tags = ?, priority = ?, updated = ?
-          WHERE id = ? AND user_id = ?`,
-    args: [newTitle, newContent, tagsJson, newPriority, now, noteId, userId]
-  });
+  const stmt = db.prepare(`UPDATE notes
+        SET title = ?, content = ?, tags = ?, priority = ?, updated = ?
+        WHERE id = ? AND user_id = ?`);
+  
+  stmt.run(newTitle, newContent, tagsJson, newPriority, now, noteId, userId);
   
   return {
     id: noteId,
@@ -197,12 +190,10 @@ export async function searchNotes(
   const db = getDatabase();
   
   // Get all notes for the user
-  const result = await db.execute({
-    sql: 'SELECT * FROM notes WHERE user_id = ? ORDER BY updated DESC',
-    args: [userId]
-  });
+  const stmt = db.prepare('SELECT * FROM notes WHERE user_id = ? ORDER BY updated DESC');
+  const results = stmt.all(userId);
   
-  const notes = result.rows as unknown as NoteRow[];
+  const notes = results as NoteRow[];
   const filteredNotes: NoteListItem[] = [];
   
   for (const note of notes) {
@@ -309,37 +300,31 @@ export async function listNotes(
     }
   }
   
-  const result = await db.execute({
-    sql,
-    args
-  });
+  const stmt = db.prepare(sql);
+  const results = stmt.all(...args);
   
-  const notes = result.rows as unknown as NoteRow[];
+  const notes = results as NoteRow[];
   return notes.map(note => rowToNoteListItem(note));
 }
 
 export async function getNote(userId: string, noteId: string): Promise<Note | null> {
   const db = getDatabase();
   
-  const result = await db.execute({
-    sql: 'SELECT * FROM notes WHERE id = ? AND user_id = ?',
-    args: [noteId, userId]
-  });
+  const stmt = db.prepare('SELECT * FROM notes WHERE id = ? AND user_id = ?');
+  const result = stmt.get(noteId, userId);
   
-  if (result.rows.length === 0) {
+  if (!result) {
     return null;
   }
   
-  return rowToNote(result.rows[0] as unknown as NoteRow);
+  return rowToNote(result as NoteRow);
 }
 
 export async function deleteNote(userId: string, noteId: string): Promise<boolean> {
   const db = getDatabase();
   
-  const result = await db.execute({
-    sql: 'DELETE FROM notes WHERE id = ? AND user_id = ?',
-    args: [noteId, userId]
-  });
+  const stmt = db.prepare('DELETE FROM notes WHERE id = ? AND user_id = ?');
+  const result = stmt.run(noteId, userId);
   
-  return result.rowsAffected > 0;
+  return result.changes > 0;
 }

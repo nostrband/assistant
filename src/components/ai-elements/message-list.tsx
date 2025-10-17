@@ -3,10 +3,10 @@
 import React from "react";
 import { MessageItem } from "@/components/ai-elements/message-item";
 import { Loader } from "@/components/ai-elements/loader";
-import { MyUIMessage } from "@/lib/server/chat-store";
+import { AssistantUIMessage } from "@/ai/agent";
 
 interface MessageListProps {
-  messages: MyUIMessage[];
+  messages: AssistantUIMessage[];
   status: "ready" | "streaming" | "submitted" | "error";
   onRegenerate: (messageId: string) => void;
 }
